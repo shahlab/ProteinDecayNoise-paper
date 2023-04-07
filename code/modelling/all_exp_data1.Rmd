@@ -1,0 +1,540 @@
+---
+title: "Create a mega dataframe with all the experiments"
+output: html_notebook
+---
+
+For all the experiments
+```{r}
+library(optimx)
+library(data.table)
+library(tidyverse)
+library(reshape2)
+library(gganimate)
+library(ggridges)
+library(ggpubr)
+library(parallel)
+library(deSolve)
+library(minpack.lm)
+library(broom)
+
+```
+
+
+#This is for reading in dataframes with the GFP (background and autofluor subtracted) intensities. 
+###constitutive mcherry
+```{r}
+#mODC-gfp
+mODC.gfp.mch <- read.csv("~/plots/7-1-20/dataframes/gfp_mODC_area_intensity.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+#cln2-gfp
+cln2.gfp.mch <- read.csv("~/plots/7-2-20/new_filters/gfp_cln2Pest_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+#stable-gfp
+stable.gfp.mch <- read.csv("~/plots/7-10-20-8hrgfp/dataframes/gfp_stable_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+
+
+##### Repeate exp from 6-20-22
+#mODC-gfp
+mODC.gfp.mch2 <- read.csv("~/plots/tef2-mch/6-20-22/modc-tef2-mch/gfp_mODC_tef2-mch_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+#cln2-gfp
+cln2.gfp.mch2 <- read.csv("~/plots/tef2-mch/6-20-22/cln2-tef2-mch/gfp_cln2PEST_tef2-mch_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+##### Repeate exp from 8-4-22 with calcufluor stain
+#mODC-gfp
+mODC.gfp.mch3 <- read.csv("~/plots/tef2-mch/8-4-22-calcufluor/mODC-tef2/gfp_mODC_tef2-mch_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+```
+
+###pup1-rfp experiments
+```{r}
+#mODC
+mODC.gfp.pup1 <- read.csv("~/plots/pup1-rfp-gfp-decay/5-5-20-20mGFP/data/gfp_mODCPest_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+#cln2-gfp
+cln2.gfp.pup1 <- read.csv("~/plots/pup1-rfp-gfp-decay/5-9-21-30mGFP/data/gfp_cln2Pest_filtered_2.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+
+
+#stable gfp
+stable.gfp.pup1 <- read.csv("~/plots/pup1-rfp-gfp-decay/4-28-21-8hrGFP/data/gfp_stable_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+
+#####REPEATE ON 6-28-22
+#mODC
+mODC.gfp.pup1.2 <- read.csv("~/plots/pup1-rfp-gfp-decay/6-28-22-modc-gfp/data/gfp_mODCPest_pup1_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+#cln2-gfp
+cln2.gfp.pup1.2 <- read.csv("~/plots/pup1-rfp-gfp-decay/6-28-22-cln2-gfp/data/gfp_cln2Pest_pup1_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+
+#####REPEATE ON 7-20-22
+#cln2-gfp
+cln2.gfp.pup1.3 <- read.csv("~/plots/pup1-rfp-gfp-decay/7-20-22-cln2-gfp/data/gfp_cln2Pest_pup1_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+#stable-gfp
+stable.gfp.pup1.2 <- read.csv("~/plots/pup1-rfp-gfp-decay/7-20-22-stable-gfp/data/gfp_stable_pup1_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+stable.gfp.pup1 %>% bind_rows() %>% filter(image.no == 1) %>% group_by(exp.field) %>% tally()
+
+#####REPEATE ON 10-7-22
+#cln2-gfp
+cln2.gfp.pup1.4 <- read.csv("~/plots/pup1-rfp-gfp-decay/10-7-22-cln2-gfp/data/gfp_cln2Pest_pup1_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+#stable-gfp
+stable.gfp.pup1.3 <- read.csv("~/plots/pup1-rfp-gfp-decay/10-7-22-stable-gfp/data/gfp_stable_pup1_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+```
+
+#proteasome inhibition
+in the 1uM experiment, the fields of view s3 and s4 have blurry images in the last few timepoints. will be removed from analysis further down. 
+```{r}
+#DMSO treatment from 2-23-22 exp
+mODC.gfp.pup1.dmso1 <- read.csv("~/plots/proteasome_inhibition/data/2-3-22/DMSO/gfp_mODCPest_DMSO_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+#50uM treatment from 2-23-22 exp
+mODC.gfp.pup1.50uM <- read.csv("~/plots/proteasome_inhibition/data/2-3-22/MG132_50uM/gfp_mODCPest_50uMMG132_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+mODC.gfp.pup1.dmso2 <- read.csv("~/plots/proteasome_inhibition/data/4-1-22/DMSO/gfp_mODCPest_DMSO_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% #remove cells from s7 field of view, blurry cells
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+mODC.gfp.pup1.1uM <- read.csv("~/plots/proteasome_inhibition/data/4-1-22/1uM/gfp_mODCPest_1uMMG132_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+mODC.gfp.pup1.2.5uM <- read.csv("~/plots/proteasome_inhibition/data/4-1-22/2.5uM/gfp_mODCPest_2.5uMMG132_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+mODC.gfp.pup1.5uM <- read.csv("~/plots/proteasome_inhibition/data/4-1-22/5uM/gfp_mODCPest_5uMMG132_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2],
+         exp.field = paste0(str_split(cell.id, pattern = "_" , simplify = TRUE)[,2], "_", 
+                            str_split(cell.id, pattern = "_" , simplify = TRUE)[,3])) %>% 
+  filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , 
+         exp.field) %>% 
+  split(.$cell.id)
+
+```
+
+
+```{r}
+const.mch <- bind_rows(mODC.gfp.mch) %>%  #bind all the gfp dfs from the constitutive mCherry 
+  mutate(degron = "mODC") %>% 
+  bind_rows(., bind_rows(mODC.gfp.mch2) %>% 
+              mutate(degron = "mODC.2")) %>% 
+  bind_rows(.,
+            bind_rows(cln2.gfp.mch) %>% 
+              mutate(degron = "cln2")) %>% 
+   bind_rows(.,
+            bind_rows(cln2.gfp.mch2) %>% 
+              mutate(degron = "cln2.2")) %>% 
+  bind_rows(.,bind_rows(stable.gfp.mch) %>% 
+              mutate(degron = "stable")) %>% 
+  mutate(red = "tef2-mCherry") %>% 
+  mutate(cell.id = paste0(cell.id ,"_",degron,"_",red)) %>% 
+  split(.$cell.id)
+
+pup1.rfp <- bind_rows(mODC.gfp.pup1) %>% #bind all the pup1-rfp background gfp df
+  mutate(degron = "mODC") %>% 
+  bind_rows(.,
+            bind_rows(mODC.gfp.pup1.2) %>% 
+              mutate(degron = "mODC.2")) %>% 
+  bind_rows(.,
+            bind_rows(cln2.gfp.pup1) %>% 
+              mutate(degron = "cln2")) %>% 
+  bind_rows(.,
+            bind_rows(cln2.gfp.pup1.2) %>% 
+              mutate(degron = "cln2.2")) %>% 
+  bind_rows(.,bind_rows(stable.gfp.pup1) %>% 
+              mutate(degron = "stable")) %>% 
+  mutate(red = "pup1-rfp") %>% 
+  mutate(cell.id = paste0(cell.id ,"_",degron,"_",red)) %>% 
+  split(.$cell.id)
+  
+all.exp.list <- bind_rows(bind_rows(const.mch), #bind mCherry background
+          bind_rows(pup1.rfp)) %>%              #bind pup1-rfp background
+  mutate(treatment = "none") %>% 
+  bind_rows(.,
+            bind_rows(bind_rows(mODC.gfp.pup1.dmso1) %>%     #bind dmso treatmnet from 3-23-22
+              mutate(treatment = "dmso1"),
+              bind_rows(mODC.gfp.pup1.dmso2) %>%             #bind dmso treatment from 4-1-22 
+              mutate(treatment = "dmso2"),
+                bind_rows(mODC.gfp.pup1.1uM) %>%             #bind 1uM treatment from 4-1-22
+                mutate(treatment = "1uM"),
+               bind_rows(mODC.gfp.pup1.2.5uM) %>%            #bind 2.5uM treatment from 4-1-22
+                mutate(treatment = "2.5uM"), 
+              bind_rows(mODC.gfp.pup1.5uM) %>%               #bind 5uM treatment from 4-1-22
+                mutate(treatment = "5uM"),
+              bind_rows(mODC.gfp.pup1.50uM) %>%               #bind 5uM treatment from 4-1-22
+                mutate(treatment = "50uM")) %>% 
+              mutate(degron = "mODC",
+                     red = "pup1-rfp",
+                     cell.id = paste0(cell.id ,"_",degron,"_",red))) %>% 
+  mutate(cell.id = paste0(cell.id , "_", treatment)) %>% 
+  split(.$cell.id)
+  
+```
+
+
+#to add the new repeated experiments to the existing dataframe
+```{r}
+all.exp.list.2 <- bind_rows(cln2.gfp.pup1.3) %>% 
+              mutate(degron = "cln2.3", 
+                     red = "pup1-rfp",
+                     treatment = "none",
+                     cell.id = paste0(cell.id ,"_",degron,"_",red,"_",treatment)
+                     ) %>% 
+   bind_rows(.,bind_rows(stable.gfp.pup1.2) %>% 
+              mutate(degron = "stable.2", 
+                     red = "pup1-rfp",
+                     treatment = "none",
+                     cell.id = paste0(cell.id ,"_",degron,"_",red,"_",treatment)
+                     )) %>% 
+  bind_rows(.,bind_rows(mODC.gfp.mch3) %>% 
+              mutate(degron = "mODC.3", 
+                     red = "tef2-mCherry",
+                     treatment = "none",
+                     cell.id = paste0(cell.id ,"_",degron,"_",red,"_",treatment)
+                     )) %>% 
+  split(.$cell.id)
+```
+10-18-22
+```{r}
+all.exp.list.3 <- bind_rows(cln2.gfp.pup1.4) %>% 
+              mutate(degron = "cln2.4", 
+                     red = "pup1-rfp",
+                     treatment = "none",
+                     cell.id = paste0(cell.id ,"_",degron,"_",red,"_",treatment)
+                     ) %>% 
+   bind_rows(.,bind_rows(stable.gfp.pup1.3) %>% 
+              mutate(degron = "stable.3", 
+                     red = "pup1-rfp",
+                     treatment = "none",
+                     cell.id = paste0(cell.id ,"_",degron,"_",red,"_",treatment)
+                     )) %>% 
+  split(.$cell.id)
+```
+
+Here I get the cell ids of cells which have less than 5 timepoints in my dataframe
+```{r}
+cellsWithLessThan5tps <- bind_rows(all.exp.list.3) %>% 
+  group_by(cell.id) %>% 
+  tally() %>% 
+  filter(n < 5) %>%
+  pull(cell.id)
+
+
+```
+
+#filtering the cells out which have less than 5 tps 
+#only looking at the first 20 timepoints
+#only pick cellls which have all 31 timepoints
+
+```{r}
+cell.in.all31tp <- bind_rows(all.exp.list.3) %>% 
+  filter(!(cell.id %in% cellsWithLessThan5tps)) %>% 
+  mutate(exp = str_split(exp.field, "_", simplify = T)[,1]) %>% 
+  filter(exp == "20min") %>% 
+  filter(image.no < 32) %>% 
+  group_by(cell.id) %>% 
+  tally() %>% 
+  filter(n == 31) #fields of view s3 and s4 from the mODC 1uM treatment with MG135 PI will be removed since their last 5-6 images are blurry.
+
+#cells with data in more than 15 images
+# cell.in.more.than.20 <- bind_rows(all.exp.list) %>% 
+#   filter(!(cell.id %in% cellsWithLessThan5tps)) %>% 
+#   mutate(exp = str_split(exp.field, "_", simplify = T)[,1]) %>% 
+#   filter(exp == "20min") %>% 
+#   group_by(cell.id) %>% 
+#   tally() %>% 
+#   filter(n > 15)
+
+
+```
+
+Cells which have data in more than 5 timepoints
+```{r}
+# gfp.filtered.cells <- bind_rows(all.exp.list) %>% 
+#   filter(!(cell.id %in% cellsWithLessThan5tps)) %>% 
+#   mutate(exp = str_split(exp.field, "_", simplify = T)[,1]) %>% 
+#   filter(exp == "20min") %>% 
+#   split(.$cell.id)
+```
+
+remove cells which have increased gfp intensity in more than 5 timepoints
+```{r}
+cells.to.remove <- bind_rows(all.exp.list.3) %>%   
+  group_by(cell.id) %>% 
+  filter(cell.id %in% cell.in.all31tp$cell.id) %>% 
+  mutate(rel.change = lead(gfpMeanBgAFsub)/lag(gfpMeanBgAFsub)) %>% 
+  filter(rel.change > 1.05) %>% #changed from 1 to 1.05
+  tally() %>% 
+  filter(n>5) 
+
+
+```
+
+```{r}
+no.of.cells <- bind_rows(all.exp.list.3) %>% 
+  filter(image.no == 1) %>% 
+  group_by(red, degron, treatment, exp.field) %>% 
+  tally() %>% 
+  rename("n.all" = "n")
+
+no.of.cells.in.all31tps <- bind_rows(all.exp.list.3) %>% 
+  filter(image.no == 1) %>% 
+  filter(cell.id %in% cell.in.all31tp$cell.id) %>% 
+  group_by(red, degron, treatment, exp.field) %>% 
+  tally() %>% 
+  rename("n.31tps" = "n")
+
+no.of.cells.to.remove <-  bind_rows(all.exp.list.3) %>% 
+  filter(image.no == 1) %>% 
+  filter(cell.id %in% cell.in.all31tp$cell.id) %>% 
+  filter(cell.id %in% cells.to.remove$cell.id) %>% 
+  group_by(red, degron, treatment, exp.field) %>% 
+  tally() %>% 
+  rename("n.remove" = "n")
+
+no.of.cells %>% 
+  left_join(.,no.of.cells.in.all31tps, by = c("treatment","red","degron","exp.field")) %>% 
+  left_join(.,no.of.cells.to.remove, by = c("treatment","red","degron","exp.field")) %>% group_by(degron) %>% summarise(sum(n.31tps))
+
+
+```
+
+
+
+cells with data in all 31 timepoints
+```{r}
+list.of.cells <- all.exp.list.3 %>%  #removed cells with less than 5 tps
+  bind_rows() %>% 
+  filter(cell.id %in% cell.in.all31tp$cell.id) %>% #keep cells which have more than 15 timepoints
+  filter(!(cell.id %in% cells.to.remove$cell.id)) %>% #remove cells which have increased intensity in more                                                          than 5 time points
+  split(.$cell.id)
+```
+
+```{r}
+bind_rows(list.of.cells) %>% 
+  filter(image.no == 1) %>% 
+  group_by(treatment, red, degron) %>% tally()
+```
+
+
+```{r}
+# list.of.cells %>% bind_rows() %>% 
+#   write_csv(.,path = "~/plots/all_data/all_exp_data.csv")
+  
+```
+
+
+```{r}
+read_csv("~/plots/all_data/all_exp_data.csv") %>% 
+  bind_rows(.,bind_rows(list.of.cells)) %>% 
+  write_csv(.,path = "~/plots/all_data/all_exp_data.csv")
+```
+```{r}
+read_csv("~/plots/all_data/all_exp_data.csv") %>% filter(image.no == 1, degron %in% c("stable.3","cln2.4")) %>% 
+  group_by(degron) %>% 
+  tally() 
+```
+

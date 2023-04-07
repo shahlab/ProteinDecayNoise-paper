@@ -1,0 +1,1448 @@
+---
+title: "analyze the saturation MN kinetics parameter"
+output: html_notebook
+---
+
+```{r}
+library(parallel)
+library(optimx)
+library(GGally)
+```
+
+```{r }
+citation(package = "optimx")
+```
+
+```{r}
+list.of.cells <- read_csv("~/plots/all_data/all_exp_data.csv") %>% split(.$cell.id)
+```
+
+```{r}
+#for non treated (no DMSO cells)cells all the three GFPs
+bind_rows(list.of.cells) %>% 
+  filter( treatment == "none", red == "pup1-rfp") %>% 
+  group_by(cell.id) %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  ggplot(.,aes(x = delta.time/60, y = gfpMeanBgAFsub , group_by = cell.id ))+
+  geom_line(alpha = 0.2)+
+  geom_hline(yintercept = 0.5)+
+  facet_wrap(~degron, scales = "free")+
+  theme_pubr()
+
+bind_rows(list.of.cells) %>% 
+  filter( treatment != "none", red == "pup1-rfp") %>% 
+  group_by(cell.id) %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  ggplot(.,aes(x = delta.time/60, y = gfpMeanBgAFsub , group_by = cell.id ))+
+  geom_line(alpha = 0.2)+
+  geom_hline(yintercept = 0.5)+
+  facet_wrap(~treatment, scales = "free")+
+  theme_pubr()
+```
+
+
+#profiles
+```{r}
+#for non treated cells all the three GFPs
+bind_rows(list.of.cells) %>% 
+  filter( treatment %in% c("none","dmso1","dmso2")) %>% 
+  group_by(cell.id) %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  ggplot(.,aes(x = delta.time/60, y = It_I0 , group_by = cell.id , color = treatment))+
+  geom_line(alpha = 0.2)+
+  geom_hline(yintercept = 0.5)+
+  facet_grid(red~degron, scales = "free_x")+
+  scale_y_log10()+
+  theme_pubr()
+
+#for non treated (no DMSO cells)cells all the three GFPs
+bind_rows(list.of.cells) %>% 
+  filter( treatment == "none", red == "pup1-rfp") %>% 
+  group_by(cell.id) %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  ggplot(.,aes(x = delta.time/60, y = It_I0 , group_by = cell.id , color = red))+
+  geom_line(alpha = 0.2)+
+  geom_hline(yintercept = 0.5)+
+  facet_wrap(~degron, scales = "free_x")+
+  scale_y_log10()+
+  theme_pubr()
+
+#CLN2
+bind_rows(list.of.cells) %>% 
+  filter(degron %in% c("cln2.3"), treatment == "none", red == "pup1-rfp") %>% 
+  group_by(cell.id) %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  ggplot(.,aes(x = delta.time/60, y = log(It_I0) , group_by = cell.id))+
+  geom_line(alpha = 0.2)+
+  geom_hline(yintercept = 0.5)+
+  facet_grid(degron~red, scales = "free_x")+
+  theme_pubr()
+
+#mODC
+bind_rows(list.of.cells) %>% 
+  filter(degron %in% c("mODC.2"), treatment == "none", red == "pup1-rfp") %>% 
+  group_by(cell.id) %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  ggplot(.,aes(x = delta.time/60, y = log(It_I0) , group_by = cell.id))+
+  geom_line(alpha = 0.2)+
+  geom_hline(yintercept = 0.5)+
+  facet_grid(degron~red, scales = "free_x")+
+  theme_pubr()
+
+#stable
+bind_rows(list.of.cells) %>% 
+  filter(degron == "stable.2", treatment == "none", red == "pup1-rfp") %>% 
+  group_by(cell.id) %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  ggplot(.,aes(x = delta.time/60, y = It_I0 , group_by = cell.id))+
+  geom_line(alpha = 0.2)+
+  geom_hline(yintercept = 0.5)+
+  facet_wrap(~red, scales = "free_x")+
+  scale_y_log10()+
+  theme_pubr()
+
+bind_rows(list.of.cells) %>% 
+  filter(treatment != "none" | degron %in% c("stable.2","stable.3")) %>% 
+  group_by(cell.id) %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  ggplot(.,aes(x = delta.time/60, y = It_I0 , group_by = cell.id))+
+  geom_line(alpha = 0.2)+
+  geom_hline(yintercept = 0.5)+
+  facet_wrap(~treatment, scales = "free_x")+
+  scale_y_log10()+
+  theme_pubr()
+```
+
+```{r}
+#CLN2
+bind_rows(list.of.cells) %>% 
+  filter(degron %in% c("cln2","cln2.2","cln2.3"), treatment == "none", delta.time == 0) %>% 
+  ggplot(.,aes(x = gfpMeanBgAFsub, fill = degron))+
+  geom_density(aes(y = ..scaled..), alpha = 0.2)+
+  facet_wrap(~red, scales = "free_x")+
+  scale_x_log10()+
+  theme_pubr()
+
+#mODC
+bind_rows(list.of.cells) %>% 
+  filter(degron %in% c("mODC","mODC.2","mODC.3"), treatment == "none", delta.time == 0) %>% 
+   ggplot(.,aes(x = gfpMeanBgAFsub, fill = degron))+
+  geom_density(aes(y = ..scaled..), alpha = 0.2)+
+  facet_wrap(~red, scales = "free_x")+
+  scale_x_log10()+
+  theme_pubr()
+```
+
+```{r}
+bind_rows(list.of.cells) %>% 
+  filter(image.no == 1) %>% 
+  group_by(treatment, red, degron) %>% tally()
+```
+
+
+mechanistic models with maturation, decay and f
+
+```{r}
+#with 3 parameters (rate of decay, rate of maturation, frac of translation after CHX treatment)
+ mechanistic.fn<- function(par, df){
+   f <- par[1]
+   dy <- par[2]
+   dm <- par[3]
+
+   df.new <- df  %>%
+     mutate(model = ((dy * (1 - f) * exp(-dy * delta.time)) / dm) + exp(-dy * delta.time) +
+              (1 - exp(-dy * delta.time)) * f -
+              ((dy * (1 - f) * exp(-(dy + dm) * delta.time)) / dm)) %>%
+     mutate(error = (I0_It - model) ^ 2) %>%
+     summarise(sum.error = sum(error))
+    
+    return(df.new$sum.error)
+  }
+
+#two parameter model (rate of decay, frac of translation after CHX treatment)
+ mechanistic.fn.nodm<- function(par, df){
+   f <- par[1]
+   dy <- par[2]
+
+   df.new <- df  %>%
+     mutate(model = exp(-dy * delta.time) +(1 - exp(-dy * delta.time)) * f ) %>%
+     mutate(error = (I0_It - model) ^ 2) %>%
+     summarise(sum.error = sum(error))
+    
+    return(df.new$sum.error)
+ }
+ 
+#one parameter model (rate of decay, exponential model)
+  mechanistic.fn.exp<- function(par, df){
+   
+   dy <- par[1]
+
+   df.new <- df  %>%
+     mutate(model = exp(-dy * delta.time)) %>%
+     mutate(error = (I0_It - model) ^ 2) %>%
+     summarise(sum.error = sum(error))
+    
+    return(df.new$sum.error)
+  }
+  
+#two parameter model (rate of maturation and rate of decay)
+    mechanistic.fn.wof<- function(par, df){
+  
+   dy <- par[1]
+   dm <- par[2]
+
+   df.new <- df  %>%
+     mutate(model = ((dy  * exp(-dy * delta.time)) / dm) + exp(-dy * delta.time)  -
+              ((dy * 1 * exp(-(dy + dm) * delta.time)) / dm)) %>%
+     mutate(error = (I0_It - model) ^ 2) %>%
+     summarise(sum.error = sum(error))
+    
+    return(df.new$sum.error)
+  }
+```
+
+(dy*(1-frac)*EXP(-dy*A1)/dm + EXP(-dy*A1) + (1-EXP(-dy*A1))*frac - dy*(1-frac)*EXP(-(dy+dm)*A1)/dm)
+
+```{r}
+log(2)/6 #for sfGFP in yeast growth conditions 
+```
+
+```{r}
+#degron GFPS
+list.of.cells.1 <- bind_rows(list.of.cells) %>% #to analyze the new experiments from 7-20-22 and 8-4-22
+  filter(degron %in% c("mODC.3","cln2.3")) %>% 
+  split(.$cell.id)
+
+#only stable and 50uM treatment cells
+list.of.cells.2 <- bind_rows(list.of.cells) %>% #to analyze the stable pup1-rfp from 7-20-22
+  filter(degron %in% c("stable", "stable.2") |
+         treatment == "50uM") %>% 
+  split(.$cell.id)
+
+```
+
+10-18-22
+```{r}
+#degron GFPS
+list.of.cells.1 <- bind_rows(list.of.cells) %>% #to analyze the new experiments from 7-20-22 and 8-4-22
+  filter(degron == "cln2.4") %>% 
+  split(.$cell.id)
+
+#only stable and 50uM treatment cells
+list.of.cells.2 <- bind_rows(list.of.cells) %>% #to analyze the stable pup1-rfp from 7-20-22
+  filter(degron == "stable.3") %>% 
+  split(.$cell.id)
+```
+
+#estimating parameters 
+dy, dm , f
+```{r}
+#for the degron GFP
+
+#10-18-22 for the repeate of cln2 
+single.cell.dy.f.dm <- mclapply(list.of.cells.1, function(a){ 
+   
+   par.optim <- c(0.5, 0.05005, 0.1)
+   
+   names(par.optim) <- c("f", "dy", "dm")
+   
+   df <- a %>% 
+            mutate(image.no = image.no-1) %>% 
+            group_by(cell.id) %>% 
+            mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1],
+                   delta.time = delta.time/60) %>% 
+     ungroup()
+   
+   optimx(par = par.optim, 
+          fn = mechanistic.fn , 
+          method = "L-BFGS-B", 
+          lower = c(0, 0.005, 0.00001), # dy = 0.00001*60 for stable GFP
+          upper = c(1, 1, Inf), #changed from dy = 6 to dy = 10 and now to dy = 1
+          df = df,
+          itnmax = 100000)
+   }, mc.cores = 40)
+
+
+```
+
+
+
+```{r}
+#for the stable GFP and the 50uM treatment
+#for the repeate of 10-7-22 
+single.cell.dy.f.dm.2 <- mclapply(list.of.cells.2, function(a){ 
+   
+   par.optim <- c(0.5, 0.005005, 0.1)
+   
+   names(par.optim) <- c("f", "dy", "dm")
+   
+   df <- a %>% 
+            mutate(image.no = image.no-1) %>% 
+            group_by(cell.id) %>% 
+            mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1],
+                   delta.time = delta.time/60) %>% 
+     ungroup()
+   
+   optimx(par = par.optim, 
+          fn = mechanistic.fn , 
+          method = "L-BFGS-B", 
+          lower = c(0, 0.0005, 0.00001), # dy = 0.00001*60 for stable GFP
+          upper = c(1, 0.1, Inf), #change dy = 0.1 from 10, similarly for all the other optimizations 
+          df = df,
+          itnmax = 100000)
+   }, mc.cores = 40)
+
+
+```
+
+
+```{r}
+single.cell.dy.f.dm.df <- single.cell.dy.f.dm %>% bind_rows(.id = "cell.id")
+single.cell.dy.f.dm.df.2 <- single.cell.dy.f.dm.2 %>% bind_rows(.id = "cell.id")
+
+```
+
+```{r}
+converged.cells <- bind_rows(single.cell.dy.f.dm.df,
+                             single.cell.dy.f.dm.df.2)  %>%
+  filter(convcode == 0) %>%
+  mutate(degron = str_split(cell.id, "_", simplify = T)[,4],
+         red = str_split(cell.id, "_", simplify = T)[,5],
+         treatment = str_split(cell.id, "_", simplify = T)[,6])
+
+# converged.cells <- single.cell.dy.f.dm.df.2  %>% 
+#   filter(convcode == 0) %>% 
+#   mutate(degron = str_split(cell.id, "_", simplify = T)[,4], 
+#          red = str_split(cell.id, "_", simplify = T)[,5],
+#          treatment = str_split(cell.id, "_", simplify = T)[,6])
+```
+
+```{r}
+# converged.cells.old <- single.cell.dy.f.dm.df  %>% 
+#   filter(convcode == 0) %>% 
+#   mutate(degron = str_split(cell.id, "_", simplify = T)[,4], 
+#          red = str_split(cell.id, "_", simplify = T)[,5],
+#          treatment = str_split(cell.id, "_", simplify = T)[,6])
+```
+
+plots
+```{r}
+#dis of f
+converged.cells %>% 
+  ggplot(.,aes(x = f, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)
+
+#dm
+converged.cells %>% 
+  ggplot(.,aes(x = dm, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)+
+  scale_x_log10()
+
+#dy
+converged.cells %>% 
+  ggplot(.,aes(x = dy, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)+
+  scale_x_log10()
+#dy
+# converged.cells.old %>% 
+#   ggplot(.,aes(x = dy, color = treatment))+
+#   geom_density(aes(y = ..scaled..))+
+#   facet_grid(red~degron)+
+#   scale_x_log10()
+
+#half lives
+converged.cells %>% 
+  ggplot(.,aes(x = log(2)/dy, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)
+
+#maturation times
+converged.cells %>% 
+  filter(treatment == "none") %>% 
+  ggplot(.,aes(x = log(2)/dm, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)+
+  scale_x_log10()
+
+#RSS
+converged.cells %>% 
+  ggplot(.,aes(x = value, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)+
+  scale_x_log10()
+```
+
+Average values of the parameters
+```{r}
+converged.cells %>% 
+  group_by(treatment, red, degron) %>% 
+  summarise(dm.avg = mean(dm))
+
+converged.cells %>% 
+  group_by(treatment, red, degron) %>% 
+  summarise(f.avg = mean(f),
+            dy.avg = mean(dy))
+```
+
+#without dm just dy and f
+```{r}
+#for the degron GFP
+single.cell.dy.f.1 <- mclapply(list.of.cells.1, function(a){ 
+   
+   par.optim <- c(0.5, 0.05005)
+   
+   names(par.optim) <- c("f", "dy")
+   
+   df <- a %>% 
+            mutate(image.no = image.no-1) %>% 
+            group_by(cell.id) %>% 
+            mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1],
+                   delta.time = delta.time/60) %>% 
+     ungroup()
+   
+   optimx(par = par.optim, #updated this line to match the initial db with exp.field when I am optimizing in a loop
+          fn = mechanistic.fn.nodm , 
+          method = "L-BFGS-B", 
+          lower = c(0, 0.005), 
+          upper = c(1, 1), 
+          df = df,
+          itnmax = 100000)
+   }, mc.cores = 40)
+
+#for the stable GFP and the 50uM treatment 
+single.cell.dy.f.2<- mclapply(list.of.cells.2, function(a){ 
+   
+   par.optim <- c(0.5, 0.005005)
+   
+   names(par.optim) <- c("f", "dy")
+   
+   df <- a %>% 
+            mutate(image.no = image.no-1) %>% 
+            group_by(cell.id) %>% 
+            mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1],
+                   delta.time = delta.time/60) %>% 
+     ungroup()
+   
+   optimx(par = par.optim, #updated this line to match the initial db with exp.field when I am optimizing in a loop
+          fn = mechanistic.fn.nodm , 
+          method = "L-BFGS-B", 
+          lower = c(0, 0.0005), 
+          upper = c(1, 0.1), 
+          df = df,
+          itnmax = 100000)
+   }, mc.cores = 40)
+
+
+```
+
+```{r}
+single.cell.dy.f.df.1 <- single.cell.dy.f.1 %>% 
+  bind_rows(.id = "cell.id")
+
+single.cell.dy.f.df.2 <- single.cell.dy.f.2 %>% 
+  bind_rows(.id = "cell.id")
+```
+
+```{r}
+converged.cells.2 <- bind_rows(single.cell.dy.f.df.1,
+                               single.cell.dy.f.df.2) %>%
+  filter(convcode == 0) %>%
+  mutate(degron = str_split(cell.id, "_", simplify = T)[,4],
+         red = str_split(cell.id, "_", simplify = T)[,5],
+         treatment = str_split(cell.id, "_", simplify = T)[,6])
+
+# converged.cells.2 <- single.cell.dy.f.df.2 %>% 
+#   filter(convcode == 0) %>% 
+#   mutate(degron = str_split(cell.id, "_", simplify = T)[,4], 
+#          red = str_split(cell.id, "_", simplify = T)[,5],
+#          treatment = str_split(cell.id, "_", simplify = T)[,6])
+
+
+
+# 
+# converged.cells.2.old <- single.cell.dy.f.df %>% 
+#   filter(convcode == 0) %>% 
+#   mutate(degron = str_split(cell.id, "_", simplify = T)[,4], 
+#          red = str_split(cell.id, "_", simplify = T)[,5],
+#          treatment = str_split(cell.id, "_", simplify = T)[,6])
+```
+
+plots
+```{r}
+#f
+converged.cells.2 %>% 
+  ggplot(.,aes(x = f, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)
+
+converged.cells.2.old %>% 
+  ggplot(.,aes(x = f, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)
+
+#dy
+converged.cells.2 %>% 
+  ggplot(.,aes(x = dy, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)+
+  scale_x_log10()
+#dy
+converged.cells.2.old %>% 
+  ggplot(.,aes(x = dy, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)+
+  scale_x_log10()
+
+#half lives
+converged.cells.2 %>% 
+  ggplot(.,aes(x = log(2)/dy, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)
+
+#rss
+converged.cells.2 %>% 
+  ggplot(.,aes(x = value, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)+
+  scale_x_log10()
+```
+
+#exponential
+```{r}
+#for degron GFPs
+single.cell.dy.1<- mclapply(list.of.cells.1, function(a){ 
+   
+   par.optim <- c(0.05005)
+   
+   names(par.optim) <- c("dy")
+   
+   df <- a %>% 
+            mutate(image.no = image.no-1) %>% 
+            group_by(cell.id) %>% 
+            mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1],
+                   delta.time = delta.time/60) %>% 
+     ungroup()
+   
+   optimx(par = par.optim, #updated this line to match the initial db with exp.field when I am optimizing in a loop
+          fn = mechanistic.fn.exp , 
+          method = "L-BFGS-B", 
+          lower = c(0.005), 
+          upper = c(1), 
+          df = df,
+          itnmax = 100000)
+   }, mc.cores = 40)
+
+#for stable gfp and 50uM 
+single.cell.dy.2 <- mclapply(list.of.cells.2, function(a){ 
+   
+   par.optim <- c(0.005005)
+   
+   names(par.optim) <- c("dy")
+   
+   df <- a %>% 
+            mutate(image.no = image.no-1) %>% 
+            group_by(cell.id) %>% 
+            mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1],
+                   delta.time = delta.time/60) %>% 
+     ungroup()
+   
+   optimx(par = par.optim, #updated this line to match the initial db with exp.field when I am optimizing in a loop
+          fn = mechanistic.fn.exp , 
+          method = "L-BFGS-B", 
+          lower = c(0.0005), 
+          upper = c(0.1), 
+          df = df,
+          itnmax = 100000)
+   }, mc.cores = 40)
+
+
+```
+
+```{r}
+single.cell.dy.df.1 <- single.cell.dy.1 %>% 
+  bind_rows(.id = "cell.id")
+
+single.cell.dy.df.2 <- single.cell.dy.2 %>% 
+  bind_rows(.id = "cell.id")
+```
+
+
+```{r}
+converged.cells.3 <- bind_rows(single.cell.dy.df.1,
+                               single.cell.dy.df.2) %>%
+  filter(convcode == 0) %>%
+  mutate(degron = str_split(cell.id, "_", simplify = T)[,4],
+         red = str_split(cell.id, "_", simplify = T)[,5],
+         treatment = str_split(cell.id, "_", simplify = T)[,6])
+
+# converged.cells.3 <- single.cell.dy.df.2 %>% 
+#   filter(convcode == 0) %>% 
+#   mutate(degron = str_split(cell.id, "_", simplify = T)[,4], 
+#          red = str_split(cell.id, "_", simplify = T)[,5],
+#          treatment = str_split(cell.id, "_", simplify = T)[,6])
+# 
+# converged.cells.3.old <- single.cell.dy.df %>% 
+#   filter(convcode == 0) %>% 
+#   mutate(degron = str_split(cell.id, "_", simplify = T)[,4], 
+#          red = str_split(cell.id, "_", simplify = T)[,5],
+#          treatment = str_split(cell.id, "_", simplify = T)[,6])
+
+```
+
+plots
+```{r}
+#dy
+converged.cells.3 %>% 
+  ggplot(.,aes(x = dy, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)+
+  scale_x_log10() +
+  theme(axis.text.x  = element_text(angle = 45))
+
+converged.cells.3.old %>% 
+  ggplot(.,aes(x = dy, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)+
+  scale_x_log10()+
+  theme(axis.text.x  = element_text(angle = 45))
+
+#half lives
+converged.cells.3 %>% 
+  ggplot(.,aes(x = log(2)/dy, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)
+
+#rss
+converged.cells.3 %>% 
+  ggplot(.,aes(x = value, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)+
+  scale_x_log10()
+```
+
+#without f
+just dm and dy
+```{r}
+single.cell.dy.dm.1 <- mclapply(list.of.cells.1, function(a){ 
+   
+   par.optim <- c(0.05005, 0.1)
+   
+   names(par.optim) <- c("dy", "dm")
+   
+   df <- a %>% 
+            mutate(image.no = image.no-1) %>% 
+            group_by(cell.id) %>% 
+            mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1],
+                   delta.time = delta.time/60) %>% 
+     ungroup()
+   
+   optimx(par = par.optim, #updated this line to match the initial db with exp.field when I am optimizing in a loop
+          fn = mechanistic.fn.wof, 
+          method = "L-BFGS-B", 
+          lower = c( 0.005, 0.00001), 
+          upper = c( 1, Inf), 
+          df = df,
+          itnmax = 100000)
+   }, mc.cores = 40)
+
+#stable gfp
+single.cell.dy.dm.2 <- mclapply(list.of.cells.2, function(a){ 
+   
+   par.optim <- c(0.005, 0.1)
+   
+   names(par.optim) <- c("dy", "dm")
+   
+   df <- a %>% 
+            mutate(image.no = image.no-1) %>% 
+            group_by(cell.id) %>% 
+            mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1],
+                   delta.time = delta.time/60) %>% 
+     ungroup()
+   
+   optimx(par = par.optim, #updated this line to match the initial db with exp.field when I am optimizing in a loop
+          fn = mechanistic.fn.wof, 
+          method = "L-BFGS-B", 
+          lower = c( 0.0005, 0.00001), 
+          upper = c( 0.1, Inf), 
+          df = df,
+          itnmax = 100000)
+   }, mc.cores = 40)
+
+
+```
+
+```{r}
+single.cell.dy.dm.df.1 <- single.cell.dy.dm.1 %>% bind_rows(.id = "cell.id")
+single.cell.dy.dm.df.2 <- single.cell.dy.dm.2 %>% bind_rows(.id = "cell.id")
+```
+
+```{r}
+# converged.cells.4.old <- single.cell.dy.dm.df %>% 
+#   filter(convcode == 0) %>% 
+#   mutate(degron = str_split(cell.id, "_", simplify = T)[,4], 
+#          red = str_split(cell.id, "_", simplify = T)[,5],
+#          treatment = str_split(cell.id, "_", simplify = T)[,6])
+
+converged.cells.4 <- bind_rows(single.cell.dy.dm.df.1,
+                               single.cell.dy.dm.df.2) %>%
+  filter(convcode == 0) %>%
+  mutate(degron = str_split(cell.id, "_", simplify = T)[,4],
+         red = str_split(cell.id, "_", simplify = T)[,5],
+         treatment = str_split(cell.id, "_", simplify = T)[,6])
+
+
+# converged.cells.4 <- single.cell.dy.dm.df.2 %>% 
+#   filter(convcode == 0) %>% 
+#   mutate(degron = str_split(cell.id, "_", simplify = T)[,4], 
+#          red = str_split(cell.id, "_", simplify = T)[,5],
+#          treatment = str_split(cell.id, "_", simplify = T)[,6])
+
+
+```
+
+plots
+```{r}
+#dy
+converged.cells.4 %>% 
+  ggplot(.,aes(x = dy, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)+
+  scale_x_log10()
+
+converged.cells.4.old %>% 
+  ggplot(.,aes(x = dy, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)+
+  scale_x_log10()
+
+#half lives
+converged.cells.4 %>% 
+  ggplot(.,aes(x = log(2)/dy, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)+
+  scale_x_log10()
+
+#dm
+converged.cells.4 %>% 
+  ggplot(.,aes(x = dm, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)+
+  scale_x_log10()
+converged.cells.4.old %>% 
+  ggplot(.,aes(x = dm, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)+
+  scale_x_log10()
+
+#barplot for dm
+converged.cells.4 %>% 
+  ggplot(.,aes(x = dm, color = treatment))+
+  geom_histogram(bins = 100, position = "identity")+
+  facet_grid(red~degron, scales = "free")+
+  scale_x_log10()
+converged.cells.4.old %>% 
+  ggplot(.,aes(x = dm, color = treatment))+
+  geom_histogram(bins = 100, position = "identity")+
+  facet_grid(red~degron, scales = "free")+
+  scale_x_log10()
+
+#mat time
+converged.cells.4 %>% 
+  ggplot(.,aes(x = log(2)/dm, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)+
+  scale_x_log10()
+
+#rss
+converged.cells.4 %>% 
+  ggplot(.,aes(x = value, color = treatment))+
+  geom_density(aes(y = ..scaled..))+
+  facet_grid(red~degron)+
+  scale_x_log10()
+```
+
+dm vs gfp intensity
+```{r}
+converged.cells.4 %>% 
+  left_join(.,bind_rows(list.of.cells) %>% 
+              filter(delta.time == 0) %>% 
+              select(cell.id, gfpMeanBgAFsub), by = "cell.id") %>% 
+  ggplot(.,aes(x = gfpMeanBgAFsub, y = dm, color = treatment))+
+  geom_point(alpha = 0.2)+
+  facet_grid(red~degron, scales = "free")+
+  scale_x_log10()+
+  scale_y_log10()+
+  geom_hline(yintercept = 10) #km = 10
+
+converged.cells.4 %>% 
+  left_join(.,bind_rows(list.of.cells) %>% 
+              filter(delta.time == 0) %>% 
+              select(cell.id, gfpMeanBgAFsub), by = "cell.id") %>% 
+  filter(treatment %in% c("none","dmso1","dmso2")) %>%
+  ggplot(.,aes(x = gfpMeanBgAFsub, y = dm, color = treatment))+
+  geom_point(alpha = 0.2)+
+  facet_grid(red~degron, scales = "free")+
+  scale_x_log10()+
+  scale_y_log10()+
+  geom_hline(yintercept = 10) 
+
+
+
+converged.cells.4 %>% 
+  left_join(.,bind_rows(list.of.cells) %>% 
+              filter(delta.time == 0) %>% 
+              select(cell.id, gfpMeanBgAFsub), by = "cell.id") %>% 
+  filter(treatment %in% c("none","dmso1","dmso2"), 
+         dy < 1, degron != "stable") %>% 
+  ggplot(.,aes(x = log(2)/dy, y = log(2)/dm, color = gfpMeanBgAFsub))+
+  geom_point(alpha = 0.2)+
+  facet_grid(red~degron, scales = "free")+
+  scale_x_log10()+
+  scale_y_log10()
+```
+
+```{r}
+cell.dm.10 <- converged.cells.4 %>% 
+  filter(dm>10 )
+
+cell.dm.10 %>% 
+  group_by(red, degron, treatment) %>% 
+  tally() %>%
+  rename("n.fast.dm" = "n") %>% 
+  left_join(.,converged.cells.4 %>% 
+                          group_by(red, degron, treatment) %>% 
+                          tally(), by = c("red","degron","treatment"))
+
+
+
+bind_rows(list.of.cells) %>% 
+  filter(cell.id %in% cell.dm.10$cell.id) %>% 
+  filter(delta.time == 0) %>% 
+  group_by(treatment, degron, red) %>% tally()
+  filter( treatment %in% c("none","dmso1","dmso2")) %>% 
+  group_by(cell.id) %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  ggplot(.,aes(x = delta.time/60, y = It_I0 , group_by = cell.id , color = treatment))+
+  geom_line(alpha = 0.2)+
+  geom_hline(yintercept = 0.5)+
+  facet_grid(red~degron, scales = "free_x")+
+  scale_y_log10()+
+  theme_pubr()
+
+bind_rows(list.of.cells) %>% 
+  filter(!(cell.id %in% cell.dm.10$cell.id)) %>% 
+  filter(delta.time == 0) %>% 
+  group_by(treatment, degron, red) %>% tally()
+  filter( treatment %in% c("none","dmso1","dmso2")) %>% 
+  group_by(cell.id) %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  ggplot(.,aes(x = delta.time/60, y = It_I0 , group_by = cell.id , color = treatment))+
+  geom_line(alpha = 0.2)+
+  geom_hline(yintercept = 0.5)+
+  facet_grid(red~degron, scales = "free_x")+
+  scale_y_log10()+
+  theme_pubr()
+
+```
+
+AIC function equation from the paper: McShane et al 2016 : Kinetic analysis of protein degradation reveals age dependent degradation. 
+
+#for a small sample space, you add a correction 2k(K+1)/(n-k-1)
+AIC = 2k + n log(RSS/n) + 2k(K+1)/(n-k-1)
+
+n = no. of data points (31)
+k = no. of parameters c(1,2,3)
+RSS = Residual sum of squares
+
+exp((AICmin − AICi)/2) can be interpreted as being proportional to the probability that the ith model minimizes the (estimated) information loss.
+```{r}
+aic.fn <- function(df,n){
+  
+  df <- df %>% 
+    mutate(aic = 2*k + n*log(value/n) ) #without the correction for small sample space
+  return(df)
+}
+
+```
+
+```{r}
+all.model.parm <- converged.cells%>% 
+  mutate(model = "dy.dm.f") %>% 
+  bind_rows(.,converged.cells.2 %>% 
+              mutate(model = "dy.f")) %>% 
+  bind_rows(.,converged.cells.3 %>% 
+              mutate(model = "exponential")) %>% 
+  bind_rows(.,converged.cells.4 %>% 
+              mutate(model = "dy.dm"))
+```
+
+Old values
+```{r}
+#for three par model
+aic.dy.f.dm.old <- aic.fn(converged.cells.old, k = 3, n = 31) %>% 
+  rename("dy.all" = "dy", 
+         "f.all" = "f",
+         "dm.all" = "dm",
+         "rss.all" = "value") %>% 
+  select(cell.id, dy.all, f.all, dm.all, rss.all, aic.all, treatment, red, degron)
+
+#for dy and f model only
+aic.dy.f.old <- aic.fn(converged.cells.2.old, k = 2, n = 31) %>% 
+  rename("dy.2" = "dy", 
+         "f.2" = "f",
+         "rss.2" = "value",
+         "aic.dy.f" = "aic.all")  %>% 
+  select(cell.id, dy.2, f.2, rss.2, aic.dy.f,treatment, red, degron)
+
+#exponential
+aic.dy.old <- aic.fn(converged.cells.3.old, k = 1, n = 31) %>% 
+  rename("dy.exp" = "dy", 
+         "rss.exp" = "value",
+         "aic.exp" = "aic.all") %>% 
+  select(cell.id, dy.exp, rss.exp, aic.exp,treatment, red, degron)
+
+#mat and decay
+aic.dy.dm.old <- aic.fn(converged.cells.4.old, k = 2, n = 31) %>%  
+  rename("dy.mat" = "dy", 
+         "dm.mat" = "dm",
+         "rss.mat" = "value",
+         "aic.mat" = "aic.all")  %>% 
+  select(cell.id, dy.mat, dm.mat,rss.mat, aic.mat,treatment, red, degron)
+```
+
+
+```{r}
+all.model.parm <- all.model.parm %>% 
+  mutate(k = case_when(model == "dy.dm.f" ~ 3,
+                       model %in% c("dy.f","dy.dm") ~ 2,
+                       model == "exponential" ~ 1))
+
+```
+
+```{r}
+aic.df <- aic.fn(all.model.parm, n = 31) %>% 
+  group_by(cell.id) %>% 
+  arrange(cell.id) %>% 
+  ungroup()
+
+
+```
+
+```{r}
+#for three par model
+# aic.dy.f.dm <- aic.fn(converged.cells, k = 3, n = 31) %>% 
+#   rename("dy.all" = "dy", 
+#          "f.all" = "f",
+#          "dm.all" = "dm",
+#          "rss.all" = "value") %>% 
+#   select(cell.id, dy.all, f.all, dm.all, rss.all, aic.all, treatment, red, degron)
+# 
+# #for dy and f model only
+# aic.dy.f <- aic.fn(converged.cells.2, k = 2, n = 31) %>% 
+#   rename("dy.2" = "dy", 
+#          "f.2" = "f",
+#          "rss.2" = "value",
+#          "aic.dy.f" = "aic.all")  %>% 
+#   select(cell.id, dy.2, f.2, rss.2, aic.dy.f,treatment, red, degron)
+# 
+# #exponential
+# aic.dy <- aic.fn(converged.cells.3, k = 1, n = 31) %>% 
+#   rename("dy.exp" = "dy", 
+#          "rss.exp" = "value",
+#          "aic.exp" = "aic.all") %>% 
+#   select(cell.id, dy.exp, rss.exp, aic.exp,treatment, red, degron)
+# 
+# #mat and decay
+# aic.dy.dm <- aic.fn(converged.cells.4, k = 2, n = 31) %>%  
+#   rename("dy.mat" = "dy", 
+#          "dm.mat" = "dm",
+#          "rss.mat" = "value",
+#          "aic.mat" = "aic.all")  %>% 
+#   select(cell.id, dy.mat, dm.mat,rss.mat, aic.mat,treatment, red, degron)
+```
+
+```{r}
+# aic.df <- aic.dy.f.dm %>% 
+#   left_join(.,aic.dy.f, by = c("cell.id", "treatment", "red","degron")) %>% 
+#   left_join(.,aic.dy, by = c("cell.id", "treatment", "red","degron")) %>% 
+#   left_join(.,aic.dy.dm, by = c("cell.id", "treatment", "red","degron")) 
+```
+
+Comparing AIC values
+```{r}
+aic.df %>%
+  filter(treatment %in% c("none","dmso1","dmso2")) %>% 
+  ggplot(.,aes(x = aic.all, y = aic.dy.f, color = treatment))+
+  geom_point(alpha = 0.2)+
+  geom_abline(slope = 1)+
+  facet_grid(red~degron, scales = "free")
+
+aic.df %>%
+  filter(treatment %in% c("none","dmso1","dmso2")) %>% 
+  ggplot(.,aes(x = aic.all, y = aic.exp, color = treatment))+
+  geom_point(alpha = 0.2)+
+  geom_abline(slope = 1)+
+  facet_grid(red~degron)
+
+aic.df %>%
+  filter(treatment %in% c("none","dmso1","dmso2")) %>% 
+  ggplot(.,aes(x = aic.all, y = aic.mat, color = treatment))+
+  geom_point(alpha = 0.2)+
+  geom_abline(slope = 1)+
+  facet_grid(red~degron)
+
+#for the treatment exps
+aic.df %>%
+  filter(treatment != "none") %>% 
+  ggplot(.,aes(x = aic.all, y = aic.mat))+
+  geom_point(alpha = 0.2)+
+  geom_abline(slope = 1)+
+  facet_wrap(~treatment)
+
+aic.df %>%
+  filter(treatment != "none") %>% 
+  ggplot(.,aes(x = aic.all, y = aic.dy.f))+
+  geom_point(alpha = 0.2)+
+  geom_abline(slope = 1)+
+  facet_wrap(~treatment)
+
+aic.df %>%
+  filter(treatment != "none") %>% 
+  ggplot(.,aes(x = aic.all, y = aic.exp))+
+  geom_point(alpha = 0.2)+
+  geom_abline(slope = 1)+
+  facet_wrap(~treatment)
+
+
+```
+
+```{r}
+#repeate 2
+aic.df %>% 
+  filter(degron == "cln2.2" & red == "pup1-rfp") %>% 
+  select(contains("aic")) %>% 
+  ggpairs()
+
+#repeate 1
+aic.df %>% 
+  filter(degron == "cln2" & red == "pup1-rfp") %>% 
+  select(contains("aic")) %>% 
+  ggpairs()
+
+
+aic.df %>% 
+  filter(degron == "cln2.2" & red == "tef2-mCherry") %>% 
+  select(contains("aic")) %>% 
+  ggpairs()
+
+aic.df %>% 
+  filter(degron == "cln2" & red == "tef2-mCherry") %>% 
+  select(contains("aic")) %>% 
+  ggpairs()
+```
+
+```{r}
+aic.df %>% 
+  filter(degron == "mODC.2" & red == "pup1-rfp") %>% 
+  select(contains("aic")) %>% 
+  ggpairs()
+
+aic.df %>% 
+  filter(degron == "mODC" & red == "pup1-rfp", treatment == "none") %>% 
+  select(contains("aic")) %>% 
+  ggpairs()
+
+aic.df %>% 
+  filter(degron == "mODC.2" & red == "tef2-mCherry") %>% 
+  select(contains("aic")) %>% 
+  ggpairs()
+
+aic.df %>% 
+  filter(degron == "mODC" & red == "tef2-mCherry") %>% 
+  select(contains("aic")) %>% 
+  ggpairs()
+```
+Distribution of the best fit model 
+```{r}
+aic.df %>% 
+  # mutate(min.aic = min(aic.all, aic.mat, aic.exp, aic.dy.f)) %>% 
+  # pivot_longer(contains("aic")) %>% 
+  group_by(cell.id) %>% 
+  filter(aic == min(aic)) %>% 
+  ungroup() %>% 
+  # pivot_wider(names_from = name, values_from = value) %>% 
+  group_by(treatment, red, degron, model) %>% 
+  tally() %>% 
+  arrange(desc(n)) %>% 
+  ungroup() %>% 
+  filter(treatment == "none") %>% 
+  ggplot(.,aes(x = model, y = n))+
+  geom_col()+
+  facet_grid(red~degron, scales = "free_y")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+aic.df %>% 
+  # mutate(min.aic = min(aic.all, aic.mat, aic.exp, aic.dy.f)) %>% 
+  pivot_longer(contains("aic")) %>% 
+  group_by(cell.id) %>% 
+  filter(value == min(value)) %>% 
+  ungroup() %>% 
+  # pivot_wider(names_from = name, values_from = value) %>% 
+  group_by(treatment, red, degron, name) %>% 
+  tally() %>% 
+  ungroup() %>% 
+  filter(treatment != "none") %>% 
+  ggplot(.,aes(x = name, y= n))+
+  geom_col()+
+  facet_wrap(~treatment, scales = "free_y")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+aic.df %>% 
+  group_by(treatment, red, degron,model) %>% 
+  tally()
+```
+
+comparing the rates of decay from various models
+```{r}
+aic.df %>%
+  filter(treatment %in% c("none","dmso1","dmso2"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1) %>% 
+  ggplot(.,aes(x = dy.all, y = dy.2, color = treatment))+
+  geom_point(alpha = 0.2)+
+  geom_abline(slope = 1)+
+  facet_grid(red~degron, scales = "free")+
+  scale_x_log10()+
+  scale_y_log10()+
+  xlab("rate of decay from the 3 par model")+
+  ylab("rate of decay from 2 par model (f, dy)")
+
+aic.df %>%
+  filter(treatment %in% c("none","dmso1","dmso2"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1)  %>% 
+  ggplot(.,aes(x = dy.all, y = dy.exp, color = treatment))+
+  geom_point(alpha = 0.2)+
+  geom_abline(slope = 1)+
+  facet_grid(red~degron, scales = "free")+
+  scale_x_log10()+
+  scale_y_log10()+
+  xlab("rate of decay from the 3 par model")+
+  ylab("rate of decay from 1 par model ( dy)")
+
+aic.df %>%
+  filter(treatment %in% c("none","dmso1","dmso2"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1) %>% 
+  ggplot(.,aes(x = dy.all, y = dy.mat, color = treatment))+
+  geom_point(alpha = 0.2)+
+  geom_abline(slope = 1)+
+  facet_grid(red~degron, scales = "free")+
+  scale_x_log10()+
+  scale_y_log10()+
+  xlab("rate of decay from the 3 par model")+
+  ylab("rate of decay from 2 par model ( dy, dm)")
+```
+maturation rates
+```{r}
+aic.df %>%
+  filter(treatment %in% c("none","dmso1","dmso2"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1) %>% 
+  ggplot(.,aes(x = dm.all, y = dm.mat, color = treatment))+
+  geom_point(alpha = 0.2)+
+  geom_abline(slope = 1)+
+  facet_grid(red~degron, scales = "free")+
+  scale_x_log10()+
+  scale_y_log10()+
+  xlab("rate of maturation from the 3 par model")+
+  ylab("rate of maturation from 2 par model ( dy, dm)")
+
+
+```
+f values
+```{r}
+aic.df %>%
+  filter(treatment %in% c("none"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1) %>% 
+  ggplot(.,aes(x = f.all, y = f.2, color = treatment))+
+  geom_point(alpha = 0.2)+
+  geom_abline(slope = 1)+
+  facet_grid(red~degron, scales = "free")+
+  xlab("frac of translation from the 3 par model")+
+  ylab("frac of translation from 2 par model ( dy, f)")
+```
+
+```{r}
+aic.df %>%
+  filter(treatment %in% c("none"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1) %>% 
+  group_by(treatment, red, degron) %>% 
+  summarise(avg.dy.all = mean(dy.all),
+            avg.dy.2 = mean(dy.2),
+            avg.dy.exp = mean(dy.exp),
+            avg.dy.mat = mean(dy.mat))
+```
+
+#decay rate distribution plots
+```{r}
+aic.df %>%
+  filter(treatment %in% c("none"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1) %>% 
+  select(cell.id, dy.all, dy.2, dy.exp, dy.mat, treatment, red, degron) %>% 
+  pivot_longer(cols = 2:5) %>% 
+  ggplot(.,aes(x = value,  fill = name))+
+  geom_histogram( alpha = 0.5)+
+  facet_grid(red~degron, scales = "free")+
+  scale_x_log10()+
+  theme_pubr()
+
+aic.df %>%
+  filter(treatment %in% c("none"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1 , 
+         degron == "cln2.2") %>% 
+  select(cell.id, dy.all, dy.2, dy.exp, dy.mat, treatment, red, degron) %>% 
+  pivot_longer(cols = 2:5) %>% 
+  ggplot(.,aes(x = log(2)/value,  fill = name))+
+  geom_density( aes(y = ..scaled..),alpha = 0.5)+
+  facet_grid(red~degron, scales = "free")+
+  theme_pubr()+
+  scale_x_continuous()
+
+aic.df %>%
+  filter(treatment %in% c("none"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1 , 
+         degron %in% c("mODC","mODC.2") ) %>% 
+  select(cell.id, dy.all, dy.2, dy.exp, dy.mat, treatment, red, degron) %>% 
+  pivot_longer(cols = 2:5) %>% 
+  ggplot(.,aes(x = log(2)/value,  fill = name))+
+  geom_density( aes(y = ..scaled..),alpha = 0.5)+
+  facet_grid(red~degron, scales = "free")+
+  theme_pubr()+
+  scale_x_continuous()
+ 
+```
+
+```{r}
+aic.df %>%
+  filter(treatment %in% c("none"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1 , 
+         degron == "cln2.2", 
+         red == "pup1-rfp") %>% 
+  select(cell.id, dy.all, dy.2, dy.exp, dy.mat, treatment, red, degron) %>% 
+  select(contains("dy")) %>% 
+  ggpairs()
+
+aic.df %>%
+  filter(treatment %in% c("none"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1 , 
+         degron == "cln2.2", 
+         red == "tef2-mCherry") %>% 
+  select(cell.id, dy.all, dy.2, dy.exp, dy.mat, treatment, red, degron) %>% 
+  select(contains("dy")) %>% 
+  ggpairs()
+```
+
+```{r}
+aic.df %>%
+  filter(treatment %in% c("none"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1 , 
+         degron == "mODC.2", 
+         red == "pup1-rfp") %>% 
+  select(cell.id, dy.all, dy.2, dy.exp, dy.mat, treatment, red, degron) %>% 
+  select(contains("dy")) %>% 
+  ggpairs()
+
+aic.df %>%
+  filter(treatment %in% c("none"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1 , 
+         degron == "mODC.2", 
+         red == "tef2-mCherry") %>% 
+  select(cell.id, dy.all, dy.2, dy.exp, dy.mat, treatment, red, degron) %>% 
+  select(contains("dy")) %>% 
+  ggpairs()
+```
+
+
+when you add proteasome inhibtor, there 
+
+```{r}
+aic.df %>% 
+  filter(treatment == "none", log(2)/dm <40) %>% 
+  ggplot(.,aes(x = log(2)/dm, y = log(2)/dy.x ))+
+  geom_point(alpha = 0.5)+
+  facet_grid(red~degron , scales = "free")+
+  scale_x_continuous()+
+  scale_y_continuous()+
+  geom_abline(slope = 1)
+```
+
+
+
+
+#Saving the data
+```{r}
+# aic.df %>% 
+#   write_csv(.,path = "~/plots/all_data/aic.csv")
+
+#updating the AIC df with the new experiments 
+# read_csv("~/plots/all_data/aic.csv") %>% 
+#   filter(!(degron %in% c("stable", "stable.2") | treatment == "50uM")) %>% 
+#   bind_rows(.,aic.df) %>% 
+#   write_csv(.,path = "~/plots/all_data/aic.csv")
+
+#10-18-22
+read_csv("~/plots/all_data/aic.csv") %>% 
+  bind_rows(.,aic.df) %>% 
+  write_csv(.,path = "~/plots/all_data/aic.csv")
+
+
+
+```
+
+```{r}
+# all.model.parm %>% 
+#   write_csv(.,"~/plots/all_data/model_parms_2.csv")
+
+# all.model.parm2 <- read_csv("~/plots/all_data/model_parms_2.csv") %>% 
+#   filter(!(degron %in% c("stable", "stable.2") | treatment == "50uM")) %>% 
+#   bind_rows(.,all.model.parm) 
+#   
+#   
+# all.model.parm2 %>% 
+#   write_csv(.,"~/plots/all_data/model_parms_2.csv")
+
+#10-18-22
+read_csv("~/plots/all_data/model_parms_2.csv") %>% 
+  bind_rows(.,all.model.parm) %>% 
+  write_csv(.,"~/plots/all_data/model_parms_2.csv")
+```
+
+decay rate distribution with maturation model
+```{r}
+
+aic.df %>%
+  filter(treatment %in% c("none"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1 , 
+         degron == "cln2.2") %>% 
+  select(cell.id, dy.all, dy.2, dy.exp, dy.mat, treatment, red, degron) %>% 
+  pivot_longer(cols = 2:5) %>% 
+  ggplot(.,aes(x = log(2)/value,  fill = name))+
+  geom_density( aes(y = ..scaled..),alpha = 0.5)+
+  facet_grid(red~degron, scales = "free")+
+  theme_pubr()+
+  scale_x_continuous()
+
+```
+
+```{r}
+aic.df %>%
+  filter(treatment %in% c("none"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1 , 
+         degron %in% c("mODC","mODC.2") ) %>% 
+  select(cell.id, dy.mat, treatment, red, degron) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% filter(delta.time == 0), by = c("cell.id","red","degron","treatment")) %>% 
+  ggplot(.,aes(y = dy.mat, x = gfpMeanBgAFsub, color = degron))+
+  geom_point( alpha = 0.5)+
+  facet_wrap(~red, scales = "free")+
+  theme_pubr()+
+  scale_x_continuous()+
+  stat_cor()
+
+aic.df %>%
+  filter(treatment %in% c("none"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1 , 
+         degron %in% c("mODC","mODC.2") ) %>% 
+  select(cell.id, dy.2, treatment, red, degron) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% filter(delta.time == 0), by = c("cell.id","red","degron","treatment")) %>% 
+  ggplot(.,aes(y = dy.2, x = gfpMeanBgAFsub, color = degron))+
+  geom_point( alpha = 0.5)+
+  facet_wrap(~red, scales = "free")+
+  theme_pubr()+
+  scale_x_continuous()+
+  stat_cor()
+
+aic.df %>%
+  filter(treatment %in% c("none"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1 , 
+         degron %in% c("mODC","mODC.2") ) %>% 
+  select(cell.id, dy.all, treatment, red, degron) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% filter(delta.time == 0), by = c("cell.id","red","degron","treatment")) %>% 
+  ggplot(.,aes(y = dy.all, x = gfpMeanBgAFsub, color = degron))+
+  geom_point( alpha = 0.5)+
+  facet_wrap(~red, scales = "free")+
+  theme_pubr()+
+  scale_x_continuous()+
+  stat_cor()
+
+aic.df %>%
+  filter(treatment %in% c("none"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1 , 
+         degron %in% c("mODC","mODC.2") ) %>% 
+  select(cell.id, dy.exp, treatment, red, degron) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% filter(delta.time == 0), by = c("cell.id","red","degron","treatment")) %>% 
+  ggplot(.,aes(y = dy.exp, x = gfpMeanBgAFsub, color = degron))+
+  geom_point( alpha = 0.5)+
+  facet_wrap(~red, scales = "free")+
+  theme_pubr()+
+  scale_x_continuous()+
+  stat_cor()
+
+```
+
+```{r}
+ 
+aic.df %>%
+  filter(treatment %in% c("none"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1 , 
+         degron %in% c("cln2","cln2.2") ) %>% 
+  select(cell.id, dy.mat, treatment, red, degron) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% filter(delta.time == 0), by = c("cell.id","red","degron","treatment")) %>% 
+  ggplot(.,aes(y = dy.mat, x = gfpMeanBgAFsub, color = degron))+
+  geom_point( alpha = 0.5)+
+  facet_grid(~red, scales = "free")+
+  theme_pubr()+
+  scale_x_continuous()+
+  stat_cor()
+
+aic.df %>%
+  filter(treatment %in% c("none"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1 , 
+         degron %in% c("cln2","cln2.2") ) %>% 
+  select(cell.id, dy.2, treatment, red, degron) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% filter(delta.time == 0), by = c("cell.id","red","degron","treatment")) %>% 
+  ggplot(.,aes(y = dy.2, x = gfpMeanBgAFsub, color = degron))+
+  geom_point( alpha = 0.5)+
+  facet_grid(~red, scales = "free")+
+  theme_pubr()+
+  scale_x_continuous()+
+  stat_cor()
+
+aic.df %>%
+  filter(treatment %in% c("none"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1 , 
+         degron %in% c("cln2","cln2.2") ) %>% 
+  select(cell.id, dy.exp, treatment, red, degron) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% filter(delta.time == 0), by = c("cell.id","red","degron","treatment")) %>% 
+  ggplot(.,aes(y = dy.exp, x = gfpMeanBgAFsub, color = degron))+
+  geom_point( alpha = 0.5)+
+  facet_grid(~red, scales = "free")+
+  theme_pubr()+
+  scale_x_continuous()+
+  stat_cor()
+
+aic.df %>%
+  filter(treatment %in% c("none"), 
+         dy.all < 1, dy.2 <1, dy.exp <1 , dy.mat <1 , 
+         degron %in% c("cln2","cln2.2") ) %>% 
+  select(cell.id, dy.all, treatment, red, degron) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% filter(delta.time == 0), by = c("cell.id","red","degron","treatment")) %>% 
+  ggplot(.,aes(y = dy.all, x = gfpMeanBgAFsub, color = degron))+
+  geom_point( alpha = 0.5)+
+  facet_grid(~red, scales = "free")+
+  theme_pubr()+
+  scale_x_continuous()+
+  stat_cor()
+```
+

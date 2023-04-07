@@ -1,0 +1,1214 @@
+---
+title: "paper1_figures"
+output: html_notebook
+---
+
+```{r}
+library(latex2exp)
+library(tidyverse)
+library(ggpubr)
+library(patchwork)
+```
+#load the data
+###AIC values of the 4 scenarios along with the parameters estimated 
+```{r}
+aic.df <- read_csv("~/plots/all_data/aic.csv")
+```
+
+###add the replicate info 
+```{r}
+
+aic.df <- aic.df %>% 
+  mutate(exp.field = paste0(str_split(cell.id, "_", simplify = T)[,2],"_",
+                            str_split(cell.id, "_", simplify = T)[,3]),
+    colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8" , "20min_s9") ~ "Replicate 3"))
+
+aic.df <- aic.df %>% 
+  mutate(colony = ifelse(degron == "stable" & red == "pup1-rfp", 
+                         case_when(exp.field %in% c("20min_s4", "20min_s5") ~ "Replicate 1",
+                                   exp.field %in% c("20min_s6", "20min_s7") ~ "Replicate 2",
+                                   exp.field %in% c("20min_s8", "20min_s9") ~ "Replicate 3"), colony)) 
+  
+```
+
+###Cellular attributes
+```{r}
+pup1.cell.attr <- read_csv("~/plots/all_data/all_pup1_cell_attr.csv")
+```
+
+#pup1-RFP background
+```{r}
+pup1.cell.attr <- pup1.cell.attr %>% 
+  mutate(exp.field = paste0(str_split(cell.id, "_", simplify = T)[,2],"_",
+                            str_split(cell.id, "_", simplify = T)[,3]),
+    colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8" , "20min_s9") ~ "Replicate 3"))
+
+pup1.cell.attr <- pup1.cell.attr %>% 
+  mutate(colony = ifelse(degron == "stable" & red == "pup1-rfp", 
+                         case_when(exp.field %in% c("20min_s4", "20min_s5") ~ "Replicate 1",
+                                   exp.field %in% c("20min_s6", "20min_s7") ~ "Replicate 2",
+                                   exp.field %in% c("20min_s8", "20min_s9") ~ "Replicate 3"), colony)) 
+ 
+multiple.pup1 <- pup1.cell.attr %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  group_by(cell.id) %>% 
+  tally() %>% 
+  filter(n>1)
+
+pup1.cell.attr <-  pup1.cell.attr %>% 
+  group_by(cell.id) %>% 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(cell.id %in% multiple.pup1$cell.id , mean(rfp.mean.bg.sub.puncta), rfp.mean.bg.sub.puncta )) %>% 
+    distinct(cell.id, .keep_all = TRUE) 
+```
+
+###Number of data points for each cell
+```{r}
+no.of.dp <- read_csv("~/plots/all_data/all_exp_data.csv") %>% 
+  filter(cell.id %in% figS2.df$cell.id) %>% 
+  group_by(cell.id) %>% 
+tally()
+
+no.of.dp %>% filter(n > 31)
+```
+
+#dy estimated using the 1-parameter exponential and 2-parameter with maturation model
+We need both the models because we are comparing the rate of decay from both the models
+```{r}
+dy.pup1 <- aic.df %>% 
+  filter(red == "pup1-rfp") %>% 
+  filter(ifelse(degron %in% c("stable.2","stable","stabe.3"), dy < 0.1, dy < 0.5)) %>% 
+  group_by(cell.id) %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm)) %>%
+  filter( dm > 0.00001) %>% 
+  filter(model %in% c("dy.dm","exponential"))
+  
+```
+
+#number of cells that converged in both the models
+```{r}
+dy.pup1 %>% 
+  filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3")) %>% 
+  select(cell.id, model, dy, aic,degron) %>% 
+  pivot_wider(values_from = c("dy","aic"), names_from = model) %>% 
+  na.omit() %>% 
+  group_by(degron) %>% 
+  tally()
+
+```
+
+Final df used to generate the figures
+```{r}
+figS2.df <- dy.pup1 %>% 
+  filter(treatment == "none") %>% 
+  left_join(.,pup1.cell.attr %>%
+              filter(red == "pup1-rfp", treatment == "none"),
+            by = c("cell.id","treatment","degron","red","colony","exp.field")) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  filter(ifelse(degron %in% c("stable.3","stable.2"), dy < 0.1, dy < 0.5))
+
+```
+
+Looking at how many cells converged in the mat model and in exponential model
+```{r}
+#total no. of cells which converged in the the maturation + decay model but not in the exponential model
+figS2.df %>% 
+  dplyr::select(cell.id, dy, model, degron) %>% 
+  dplyr::ungroup() %>% 
+  pivot_wider(values_from = dy, names_from = model) %>% 
+  filter(is.na(exponential)) %>% 
+  group_by(degron) %>% 
+  tally()
+
+#total no. of cells which converged in the exponential model but not in the maturation + decay model
+figS2.df %>% 
+  dplyr::select(cell.id, dy, model, degron) %>% 
+  dplyr::ungroup() %>% 
+  pivot_wider(values_from = dy, names_from = model) %>% 
+  filter(is.na(dy.dm)) %>% 
+  group_by(degron) %>% 
+  tally()
+```
+
+#percent of cells with lowest AIC scores in each model
+```{r}
+figS2.df %>% 
+  filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3")) %>% 
+  mutate(degron = case_when(degron %in% c("mODC","mODC.2") ~ "GFP-mODC",
+                            degron %in% c("cln2.2","cln2","cln2.3","cln2.4") ~ "GFP-CLN2",
+                            degron %in% c("stable","stable.2","stable.3") ~ "GFP")) %>%
+  select(cell.id, model, dy, aic,degron) %>% 
+  pivot_wider(values_from = c("dy","aic"), names_from = model) %>% 
+  na.omit() %>% 
+  mutate(best.model = ifelse(aic_exponential < aic_dy.dm, "exp","mat")) %>% 
+  group_by(degron,best.model) %>% 
+  tally() %>% 
+  mutate(per.mod = round((n/sum(n))*100 ,digits = 2)) 
+```
+
+#underestimation of decay rates by exponential model grouped by 
+```{r}
+figS2.df %>% 
+  dplyr::select(cell.id, dm, dy, model, degron, gfp.mean.bg.af.sub.new) %>% 
+  dplyr::ungroup() %>% 
+  pivot_wider(values_from = c("dy","dm"), names_from = model) %>% 
+  mutate(dm.level = ifelse(dm_dy.dm > 1, ">1", "<1"),
+    exp.mat.ratio = ((dy_dy.dm - dy_exponential)/dy_dy.dm)*100) %>% 
+  filter(!(is.na(exp.mat.ratio)))%>%
+  filter(degron %in% c("mODC.2","cln2.3","stable.3","stable.2","cln2.4")) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.4") ~ "GFP-CLN2",
+                            degron %in% c("mODC.2") ~ "GFP-mODC",
+                            degron %in% c("stable.2","stable.3") ~ "GFP"),
+         degron = factor(degron, levels = c("GFP-mODC","GFP-CLN2","GFP"))) %>%
+  group_by(degron, dm.level) %>% 
+  summarise(median(exp.mat.ratio) %>% signif(.,digits = 2), 
+            sd(exp.mat.ratio),
+            NROW(exp.mat.ratio))
+```
+
+
+```{r}
+figS2.df %>% 
+  dplyr::select(cell.id, dy, model, degron, gfp.mean.bg.af.sub.new) %>% 
+  dplyr::ungroup() %>% 
+  pivot_wider(values_from = dy, names_from = model) %>% 
+  mutate(exp.mat.ratio = (dy.dm - exponential)/dy.dm) %>% 
+  filter(!(is.na(exp.mat.ratio))) %>%
+  filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.3","stable.2")) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.4") ~ "GFP-CLN2", 
+                            degron %in% c("mODC.2") ~ "GFP-mODC", 
+                            degron %in% c("stable.2","stable.3") ~ "GFP"), 
+         degron = factor(degron, levels = c("GFP-mODC","GFP-CLN2","GFP"))) %>% 
+  ggplot(.,aes(x = gfp.mean.bg.af.sub.new, y = exp.mat.ratio))+
+  geom_point(size = 0.2)+
+  facet_wrap(~degron, scales = "free")+
+  theme_pubr()
+
+
+```
+
+#bar plot to show which model best explains the decay 
+```{r}
+figS2.df %>% 
+  filter(model %in% c("dy.dm","exponential")) %>% 
+  group_by(cell.id) %>% 
+  filter(aic == min(aic)) %>% 
+  ungroup() %>% 
+  # pivot_wider(names_from = name, values_from = value) %>% 
+  group_by(treatment, red, degron, colony,model) %>% 
+  tally() %>% 
+  ungroup() %>% 
+  filter(treatment == "none") %>% 
+  ggplot(.,aes(x = model, y= n, fill = colony))+
+  geom_col(position = "dodge")+
+  facet_wrap(~degron, scales = "free")
+  # theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+aic.df %>% 
+  filter(model %in% c("dy.dm","exponential")) %>% 
+  group_by(cell.id) %>% 
+  filter(aic == min(aic)) %>% 
+  ungroup() %>% 
+  # pivot_wider(names_from = name, values_from = value) %>% 
+  group_by(treatment, red, degron, model) %>% 
+  tally() %>% 
+  ungroup() %>% 
+  filter(treatment != "none") %>% 
+  ggplot(.,aes(x = model, y= n))+
+  geom_col()+
+  facet_wrap(~treatment, scales = "free_y")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+```{r}
+high.dm <- figS2.df %>% 
+  filter(model %in% c("dy.dm")) %>% 
+  filter( treatment == "none", red == "pup1-rfp") %>% 
+  filter(dm > 1)
+
+low.dm <- figS2.df %>% 
+  filter(model %in% c("dy.dm")) %>% 
+  filter(treatment == "none", red == "pup1-rfp") %>% 
+  filter(dm < 1)
+```
+
+#modified supplemtal figures
+#the values of dy when 
+```{r}
+#cln2
+figS2.df %>% 
+  filter(model %in% c("dy.dm","exponential") ) %>% 
+  filter(degron %in% c("cln2","cln2.2","cln2.3","cln2.4"), treatment == "none", red == "pup1-rfp") %>% 
+  filter(dy < 0.5) %>% 
+  mutate(dm.level = ifelse(cell.id %in% high.dm$cell.id , "High", "low")) %>% 
+  select(cell.id, degron, dy, model, dm.level) %>% 
+  pivot_wider(values_from = dy, names_from = model) %>% 
+  ggplot(.,aes(x = exponential, y = dy.dm, color = dm.level))+
+    geom_point(size = 0.5)+
+  geom_abline(slope = 1, color = "firebrick1")+
+  stat_cor()+
+  theme_pubr()+
+  xlab(TeX("Rate of Decay from a one parameter model (Eq. 8), $\\delta , min^{-1}$"))+
+  ylab(TeX("Rate of Decay from a model with maturation (Eq. 6), $\\delta , min^{-1}$"))+
+  theme(text = element_text(size = 8))
+
+#stable
+figS2.df %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  filter(model %in% c("dy.dm","exponential") ) %>% 
+  filter(degron %in% c("stable","stable.2","stable.3"), treatment == "none", red == "pup1-rfp") %>% 
+  filter(dy < 0.1) %>% 
+  mutate(dm.level = ifelse(cell.id %in% high.dm$cell.id , "High", "low")) %>% 
+  select(cell.id, degron, dy, model, dm.level) %>% 
+  pivot_wider(values_from = dy, names_from = model) %>% 
+  ggplot(.,aes(x = exponential, y = dy.dm, color = dm.level))+
+    geom_point(size = 0.5)+
+  geom_abline(slope = 1, color = "firebrick1")+
+  stat_cor()+
+  theme_pubr()+
+  xlab(TeX("Rate of Decay from a one parameter model (Eq. 8), $\\delta , min^{-1}$"))+
+  ylab(TeX("Rate of Decay from a model with maturation (Eq. 6), $\\delta , min^{-1}$"))+
+  theme(text = element_text(size = 8))
+
+  
+```
+
+#dm values histogram
+```{r}
+dm.distPlt <- figS2.df %>% 
+  filter(rfp.mean.bg.sub.puncta > 0,
+         degron %in% c("mODC.2","cln2.3","stable.3")) %>% 
+  filter(model == "dy.dm") %>% 
+  filter(treatment == "none", red == "pup1-rfp") %>% 
+  filter(ifelse(degron %in% c("stable","stable.2","stable.3"), dy < 0.1, dy < 0.5), 
+         dm > 0.00001) %>% 
+  mutate(degron = case_when(degron %in% c("mODC","mODC.2") ~ "GFP-mODC",
+                            degron %in% c("cln2.2","cln2","cln2.3","cln2.4") ~ "GFP-CLN2",
+                            degron %in% c("stable","stable.2","stable.3") ~ "GFP"), 
+         degron = factor(degron, levels = c("GFP-mODC","GFP-CLN2","GFP"))) %>% 
+  ggplot(.,aes(x = dm, fill = degron))+
+  geom_histogram(position = "dodge")+
+  theme_pubr()+
+  scale_fill_manual(values = c("indianred3","khaki3","deepskyblue3"), name = NULL)+
+  scale_x_log10(labels = scales::trans_format("log10", scales::math_format(10^.x)))+
+  xlab(TeX("Rate of Maturation ($\\mu,min^{-1}$)"))+
+  ylab("No. of cells")+
+  theme(text = element_text(size = 8), 
+        legend.position = c(0.5, 1), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(2 ,"mm"),
+         axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2))
+dm.distPlt
+```
+
+#percent of cells with dm values > 1 and < 1 in the maturation model
+```{r}
+dm.per.low.BarPlt <- figS2.df %>% 
+  filter(rfp.mean.bg.sub.puncta > 0,
+         degron %in% c("mODC.2","cln2.4","cln2.3","stable.2","stable.3")) %>% 
+  filter(model == "dy.dm") %>% 
+  filter(treatment == "none", red == "pup1-rfp") %>% 
+  filter(ifelse(degron %in% c("stable","stable.2","stable.3"), dy < 0.1, dy < 0.5), 
+         dm > 0.00001) %>% 
+  mutate(dm.level = ifelse(dm > 1, "high", "low"),
+    degron = case_when(degron %in% c("mODC","mODC.2") ~ "yeGFP-mODC",
+                            degron %in% c("cln2.2","cln2","cln2.3","cln2.4") ~ "yeGFP-CLN2",
+                            degron %in% c("stable","stable.2","stable.3") ~ "yeGFP"), 
+         degron = factor(degron, levels = c("yeGFP-mODC","yeGFP-CLN2","yeGFP"))) %>% 
+  group_by(degron, dm.level) %>% 
+  tally() %>% 
+  pivot_wider(values_from = n, names_from = dm.level) %>% 
+  mutate(per.low = (low/(low+high))*100 ) %>% 
+  ggplot(.,aes(x = degron, y = per.low))+
+  geom_col(width = 0.2)+
+  theme_pubr()+
+  ylab(bquote(atop("% of cells with" , "rate of maturation \u03bc < 1"~ min^{-1})))+
+  # ylab(TeX("% of cells with rate of maturation $(\\mu) < 1\\ min^{-1}$"))+
+  theme(text = element_text(size = 12), #changed to 12 for GRC from 8
+        legend.position = c(0.5, 1), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(2 ,"mm"),
+         axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        axis.title.x = element_blank())+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 3))
+dm.per.low.BarPlt
+```
+
+```{r}
+#mODC
+modc.dy.comparePlt <- figS2.df %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  filter(model %in% c("dy.dm","exponential") ) %>% 
+  filter(degron %in% c("mODC","mODC.2"), treatment == "none", red == "pup1-rfp", dy < 0.5) %>% 
+  mutate(dm.level = ifelse(cell.id %in% high.dm$cell.id , "> 1", "<1")) %>% 
+  dplyr::select(cell.id, degron, dy, model, dm.level) %>% 
+  pivot_wider(values_from = dy, names_from = model) %>%
+  ggplot(.,aes(x = exponential, y = dy.dm , color = dm.level))+
+    geom_point(size = 0.01)+
+  geom_abline(slope = 1)+
+  stat_cor(show.legend = FALSE, size = 2)+
+  theme_pubr()+
+  xlab(TeX("Rate of Decay from Eq. 8, ($\\delta , min^{-1}$)"))+
+  ylab(TeX("Rate of Decay from Eq. 6, ($\\delta , min^{-1}$)"))+
+  theme(text = element_text(size = 6), 
+        legend.text = element_text(size = 5),
+        legend.background = element_blank(),
+        legend.direction = "vertical", 
+        legend.position = c(0.8,0.1),
+        legend.spacing.y = unit(-0.5,"mm"),
+        legend.spacing.x = unit(-0.25,"cm"),
+        legend.key.height = unit(1, "mm"))+
+  scale_color_manual(values = c("salmon3","dodgerblue3"), 
+                     name = TeX("$\\mu, min^{-1}"))
+
+modc.dy.comparePlt
+```
+
+```{r}
+figS2.df %>% 
+  filter(model == "dy.dm", red == "pup1-rfp", treatment =="none", degron %in% c("mODC.2","cln2.3","cln2.4","stable.2","Stable.3")) %>% 
+  left_join(.,no.of.dp, by = "cell.id") %>% 
+  group_by(cell.id) %>%
+  mutate(rmsd = sqrt(value/n)) %>%
+  ungroup() %>% 
+  group_by(degron, colony) %>% 
+  mutate(rmsd.mean.norm = rmsd/mean(rmsd)) %>% 
+  ggplot(.,aes(x = rmsd.mean.norm ))+
+  geom_histogram()+
+  facet_grid(colony~degron, scales = "free")
+
+figS2.df %>% 
+  filter(model == "dy.dm", red == "pup1-rfp", treatment =="none", degron %in% c("mODC.2","cln2.3","cln2.4","stable.2","Stable.3")) %>% 
+  left_join(.,no.of.dp, by = "cell.id") %>% 
+  group_by(cell.id) %>%
+  mutate(rmsd = sqrt(value/n))%>%
+  ungroup() %>% 
+  group_by(degron, colony) %>% 
+  mutate(rmsd.mean.norm = rmsd/mean(rmsd)) %>% 
+  ggplot(.,aes(x = rmsd ))+
+  geom_histogram()+
+  facet_grid(colony~degron, scales = "free")
+
+figS2.df %>% 
+  filter(red == "pup1-rfp", treatment =="none", degron %in% c("mODC.2","cln2.3","cln2.4","stable.2","Stable.3")) %>% 
+  left_join(.,no.of.dp, by = "cell.id") %>% 
+  group_by(cell.id) %>%
+  mutate(rmsd = sqrt(value/n))%>%
+  ungroup() %>% 
+  group_by(degron, model) %>% 
+  mutate(rmsd.mean.norm = rmsd/mean(rmsd)) %>% 
+  filter(rmsd < 0.) %>% 
+  ggplot(.,aes(x = rmsd, color = model))+
+  geom_freqpoly()+
+  facet_wrap(~degron, scales = "free")+
+  theme_pubr()+
+  theme(text = element_text(size = 8))
+
+```
+
+```{r}
+figS2.df %>% 
+  filter(red == "pup1-rfp", treatment =="none", degron %in% c("mODC.2","cln2.3","cln2.4","stable.2","Stable.3")) %>% 
+  left_join(.,no.of.dp, by = "cell.id") %>% 
+  group_by(cell.id) %>%
+  mutate(rmsd = sqrt(value/n))%>%
+  ungroup() %>% 
+  group_by(degron, model) %>% 
+  mutate(rmsd.mean.norm = rmsd/mean(rmsd)) %>% 
+  filter(rmsd > 0.1)
+  ggplot(.,aes(x = rmsd, color = model))+
+  geom_freqpoly()+
+  facet_wrap(~degron, scales = "free")+
+  theme_pubr()+
+  theme(text = element_text(size = 8))
+```
+
+#aic scores
+```{r}
+aic.score.plt <- figS2.df %>% 
+  filter(model %in% c("dy.dm","exponential")) %>% 
+  filter(degron %in% c("cln2.3","mODC.2","stable.3","stable.2"), treatment == "none", red == "pup1-rfp") %>%
+  group_by(cell.id) %>% 
+  filter(!(is.na(dy)), 
+         ifelse(degron %in% c("stable.3","stable.2"), dy < 0.1, dy <0.5)) %>% 
+  select(cell.id, degron, dm,dy,aic, model, colony) %>% 
+  ungroup() %>% 
+  pivot_wider(values_from = c("dy","aic","dm"), names_from = "model")  %>% 
+  mutate(dm_dy.dm = ifelse(is.na(dm_dy.dm), Inf, dm_dy.dm),
+    dm.level = ifelse(dm_dy.dm > 1, "high", "low")) %>%
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.4") ~ "GFP-CLN2",
+                            degron %in% c("mODC.2") ~ "GFP-mODC",
+                            degron %in% c("stable.2","stable.3") ~ "GFP"),
+         degron = factor(degron, levels = c("GFP-mODC","GFP-CLN2","GFP")))%>%
+  ggplot(.,aes(x = aic_exponential, y = aic_dy.dm))+
+  geom_point(size = 0.2)+
+  geom_abline(slope = 1, color = "red4")+
+  facet_wrap(~degron, scales = "free")+
+  scale_color_identity()+
+  theme_pubr()+
+  xlim(-300,-100)+
+  ylim(-300,-100)+
+  xlab("AIC scores for Eq 8")+
+  ylab("AIC scores for Eq 6")+
+  theme(text = element_text(size = 8),
+        axis.text.x = element_text(angle = 30), 
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        strip.background = element_blank())
+
+aic.score.plt
+
+```
+
+```{r}
+aic.score.ptDenPlt <- figS2.df %>% 
+  filter(model %in% c("dy.dm","exponential")) %>% 
+  filter(degron %in% c("cln2.3","cln2.4","mODC.2","stable.2","stable.3"), treatment == "none", red == "pup1-rfp") %>%
+  group_by(cell.id) %>% 
+  filter(!(is.na(dy)), 
+         ifelse(degron %in% c("stable.3","stable.2"), dy < 0.1, dy <0.2)) %>% 
+  dplyr::select(cell.id, degron, dm,dy,aic, model, colony) %>% 
+  ungroup() %>% 
+  pivot_wider(values_from = c("dy","aic","dm"), names_from = "model")  %>% 
+  mutate(dm_dy.dm = ifelse(is.na(dm_dy.dm), Inf, dm_dy.dm),
+    dm.level = ifelse(dm_dy.dm > 1, "high", "low")) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.4") ~ "yeGFP-CLN2",
+                            degron %in% c("mODC.2") ~ "yeGFP-mODC",
+                            degron %in% c("stable.2","stable.3") ~ "yeGFP"),
+         degron = factor(degron, levels = c("yeGFP-mODC","yeGFP-CLN2","yeGFP")))%>%
+  ggplot(.,aes(y = aic_exponential, x = aic_dy.dm))+
+  # geom_hex(bins = 100)+
+  ggpointdensity::geom_pointdensity(size = 0.2, adjust = 4)+
+  geom_abline(slope = 1, color = "red4", alpha = 0.5)+
+  facet_wrap(~degron, scales = "free")+
+  theme_pubr()+
+  xlim(-350,-100)+
+  ylim(-350,-100)+
+  labs(title = "Model comparison per cell:\nAkaike Information Criterion (AIC)")+
+  ylab("AIC [Exponential model]")+
+  xlab("AIC [2-Parameter model w Maturation]")+
+  theme(text = element_text(size = 10), #changed to 12 for GRC from 8
+        axis.text.x = element_text(angle = 30), 
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        strip.background = element_blank(),
+        legend.key.size = unit(1.5 ,"mm"),
+        legend.position = c(0.95,0.2),
+        legend.background = element_blank(),
+        legend.direction = "vertical",
+        legend.title = element_blank())
+
+aic.score.ptDenPlt
+```
+
+#dy scatterplot
+```{r}
+dy.models.scatPlt <- figS2.df %>% 
+  filter(model %in% c("dy.dm","exponential")) %>% 
+  filter(degron %in% c("cln2.3","cln2.4","stable.2","mODC.2","stable.3"), treatment == "none", red == "pup1-rfp") %>%
+  group_by(cell.id) %>% 
+  filter(!(is.na(dy)), 
+         ifelse(degron %in% c("stable.3","stable.2"), dy < 0.1, dy <0.2)) %>% 
+  dplyr::select(cell.id, degron, dm,dy,aic, model, colony) %>% 
+  ungroup() %>% 
+  pivot_wider(values_from = c("dy","aic","dm"), names_from = "model")  %>% 
+  mutate(dm_dy.dm = ifelse(is.na(dm_dy.dm), Inf, dm_dy.dm),
+    dm.level = ifelse(dm_dy.dm > 1, "high", "low")) %>%
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.4") ~ "yeGFP-CLN2",
+                            degron %in% c("mODC.2") ~ "yeGFP-mODC",
+                            degron %in% c("stable.2","stable.3") ~ "yeGFP"),
+         degron = factor(degron, levels = c("yeGFP-mODC","yeGFP-CLN2","yeGFP")))%>%
+  ggplot(.,aes(y = dy_exponential, x = dy_dy.dm))+
+  # geom_hex(bins = 100)+
+  ggpointdensity::geom_pointdensity(size = 0.2, adjust = 0.5)+
+  geom_abline(slope = 1, color = "red4", alpha = 0.5)+
+  facet_wrap(~degron, scales = "free")+
+  theme_pubr()+
+  ylab(TeX("Exponential model ($\\delta_{exp}$)"))+
+  xlab(TeX("2-parameter model w Maturation ($\\delta_{mat}$)"))+
+  labs(title = "Rate of Decay")+
+  theme(text = element_text(size = 12),#changed to 12 for GRC from 8
+        axis.text.x = element_text(angle = 30), 
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        strip.background = element_blank(),
+        legend.key.size = unit(1.5,"mm"),
+        legend.position = c(0.95,0.2),
+        legend.background = element_blank(),
+        legend.direction = "vertical",
+        legend.title = element_blank())
+dy.models.scatPlt
+```
+
+distributions of dy 
+geoom_freak_poly
+```{r}
+dy.models.den.plt <- figS2.df %>% 
+  filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3"), treatment == "none", red == "pup1-rfp") %>%
+  group_by(cell.id) %>% 
+  filter(!(is.na(dy)), 
+         ifelse(degron %in% c("stable.3","stable.2"), dy < 0.1, dy <0.5)) %>% 
+  select(cell.id, degron, dy,aic, model, colony) %>% 
+  ungroup() %>%
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.4") ~ "GFP-CLN2",
+                            degron %in% c("mODC.2") ~ "GFP-mODC",
+                            degron %in% c("stable.2","stable.3") ~ "GFP"),
+         degron = factor(degron, levels = c("GFP-mODC","GFP-CLN2","GFP")))%>%
+  ggplot(.,aes(x = dy, color = model))+
+  # geom_density(alpha = 0.5)+
+  geom_freqpoly()+
+  facet_wrap(~degron, scales = "free",
+             labeller =  label_wrap_gen(width = 3 , multi_line = T))+
+  theme_pubr()+
+  scale_color_manual(values = c("brown4", "skyblue4"), name = NULL, labels = c("Eq 6", "Eq 8"))+
+  xlab(TeX("Rate of decay ($\\delta, min^{-1}$)"))+
+  theme(text = element_text(size = 8), 
+        axis.text.x = element_text(angle = 30, hjust = 1),
+        legend.position = "bottom",
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(4 ,"mm"),
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        strip.background = element_blank()
+        )
+
+dy.models.den.plt
+```
+
+```{r}
+figS2.df %>% 
+  dplyr::select(cell.id, dm, dy, model, degron, gfp.mean.bg.af.sub.new) %>% 
+  dplyr::ungroup() %>% 
+  pivot_wider(values_from = c("dy","dm"), names_from = model) %>% 
+  mutate(dm.level = ifelse(dm_dy.dm > 1, "high", "low"),
+    exp.mat.ratio = ((dy_dy.dm - dy_exponential)/dy_dy.dm)*100) %>% 
+  filter(!(is.na(exp.mat.ratio)))%>%
+  filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.3","stable.2")) %>% 
+  group_by(degron, dm.level) %>% 
+  tally()
+```
+
+Underestimation of the decay rates 
+Decay rates are higher in the maturation model compared to the exponential model
+
+```{r}
+df.underEst <- figS2.df %>% 
+  dplyr::select(cell.id, dm, dy, model, degron, gfp.mean.bg.af.sub.new) %>% 
+  dplyr::ungroup() %>% 
+  pivot_wider(values_from = c("dy","dm"), names_from = model) %>% 
+  mutate(dm.level = ifelse(dm_dy.dm > 1, ">1", "<1"),
+    exp.mat.ratio = ((dy_dy.dm - dy_exponential)/dy_dy.dm)*100) %>% 
+  filter(!(is.na(exp.mat.ratio)))%>%
+  filter(degron %in% c("mODC.2","cln2.4","cln2.3","stable.2","stable.3")) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.4") ~ "yeGFP-CLN2",
+                            degron %in% c("mODC.2") ~ "yeGFP-mODC",
+                            degron %in% c("stable.2","stable.3") ~ "yeGFP"),
+         degron = factor(degron, levels = c("yeGFP-mODC","yeGFP-CLN2","yeGFP"))) %>% 
+  group_by(degron, dm.level) %>% 
+  summarise(n = NROW(exp.mat.ratio), 
+            exp.mat.ratio = min(exp.mat.ratio)-2)
+
+```
+
+```{r}
+#boxplot of the underestimation 
+underEst.bx.plt <- figS2.df %>% 
+  dplyr::select(cell.id, dm, dy, model, degron, gfp.mean.bg.af.sub.new) %>% 
+  dplyr::ungroup() %>% 
+  pivot_wider(values_from = c("dy","dm"), names_from = model) %>% 
+  mutate(dm.level = ifelse(dm_dy.dm > 1, ">1", "<1"),
+    exp.mat.ratio = ((dy_dy.dm - dy_exponential)/dy_dy.dm)*100) %>% 
+  filter(!(is.na(exp.mat.ratio)))%>%
+  filter(degron %in% c("mODC.2","cln2.3","stable.3","stable.2","cln2.4")) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.4") ~ "yeGFP-CLN2",
+                            degron %in% c("mODC.2") ~ "yeGFP-mODC",
+                            degron %in% c("stable.2","stable.3") ~ "yeGFP"),
+         degron = factor(degron, levels = c("yeGFP-mODC","yeGFP-CLN2","yeGFP")))%>%
+  ggplot(.,aes(x = degron, y = exp.mat.ratio,fill = dm.level))+
+  geom_boxplot(outlier.size = 0.2, 
+               lwd = 0.1)+
+  geom_text(data = df.underEst %>% 
+              group_by(dm.level), 
+            aes(label = paste("n =",n), fill = dm.level),
+            position = position_dodge(width = 0.8), size = 4)+ #changed from 2 to 4 for grc
+  theme_pubr()+
+  # scale_fill_brewer(name = "Replicate", palette = "Set2")+
+  ylab(TeX("% underestimation of \nrate of decay ($\\frac{\\delta_{mat} - \\delta_{exp}}{\\delta_{mat}}$)"))+
+  theme(axis.title.x = element_blank(), 
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        text = element_text(size = 12),#changed to 12 for GRC from 8
+        legend.background = element_blank(),
+        legend.direction = "vertical", 
+        legend.position = c(0.9,0.9),
+        legend.key.height = unit(3, "mm"))+
+        # legend.position = c(factor("GFP-CLN2"), 40))+
+  scale_fill_manual(values = c("salmon3","dodgerblue3"), 
+                     name = TeX("$\\mu, min^{-1}"))+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 3))
+
+underEst.bx.plt
+```
+Added the protein inhibiition data set
+```{r}
+figs2.prtIn <- dy.pup1 %>% 
+  left_join(.,pup1.proInhi.attr %>%
+              filter(red == "pup1-rfp"),
+            by = c("cell.id","treatment","degron","red","colony","exp.field")) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0)
+```
+#with proteasome inhibition
+##percent cells with mu < 1
+```{r}
+figs2.prtIn %>% 
+  filter(rfp.mean.bg.sub.puncta > 0,
+         treatment != "none") %>% 
+  filter(model == "dy.dm") %>% 
+  filter(ifelse(treatment == "5uM", dy > 0.005, dy < 0.5), 
+         dm > 0.00001) %>% 
+  mutate(dm.level = ifelse(dm > 1, "high", "low"),
+    degron = case_when(degron %in% c("mODC","mODC.2") ~ "GFP-mODC",
+                            degron %in% c("cln2.2","cln2","cln2.3","cln2.4") ~ "GFP-CLN2",
+                            degron %in% c("stable","stable.2","stable.3") ~ "GFP"), 
+         treatment = factor(treatment, levels = c("dmso1","dmso2","1uM","2.5uM","5uM","50uM"))) %>% 
+  group_by(treatment, dm.level) %>% 
+  tally() %>% 
+  pivot_wider(values_from = n, names_from = dm.level) %>% 
+  mutate(per.low = (low/(low+high))*100 ) %>% 
+  ggplot(.,aes(x = treatment, y = per.low))+
+  geom_col(width = 0.2)+
+  theme_pubr()+
+  ylab(bquote(atop("% of cells with" , "rate of maturation \u03bc < 1"~ min^{-1})))+
+  # ylab(TeX("% of cells with rate of maturation $(\\mu) < 1\\ min^{-1}$"))+
+  theme(text = element_text(size = 8), 
+        legend.position = c(0.5, 1), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(2 ,"mm"),
+         axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        axis.title.x = element_blank())+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 3))
+```
+```{r}
+log(2)/0.5000000
+```
+##AIC scores
+```{r}
+figs2.prtIn %>% 
+  filter(rfp.mean.bg.sub.puncta > 0,
+         treatment != "none") %>% 
+filter(model %in% c("dy.dm","exponential")) %>%
+  group_by(cell.id) %>% 
+  filter(!(is.na(dy)), 
+         ifelse(degron == "5uM", dy > 0.005000000, dy < 0.5)) %>% 
+  dplyr::select(cell.id, treatment, dm,dy,aic, model, colony) %>% 
+  ungroup() %>% 
+  pivot_wider(values_from = c("dy","aic","dm"), names_from = "model")  %>% 
+  mutate(dm_dy.dm = ifelse(is.na(dm_dy.dm), Inf, dm_dy.dm),
+    dm.level = ifelse(dm_dy.dm > 1, "high", "low")) %>%
+  mutate( treatment = case_when(treatment %in% c("dmso1","dmso2") ~ "DMSO",
+                                TRUE ~ treatment), 
+         treatment = factor(treatment, levels = c("DMSO","1uM","2.5uM","5uM","50uM"))) %>% 
+  ggplot(.,aes(y = aic_exponential, x = aic_dy.dm))+
+  # geom_hex(bins = 100)+
+  ggpointdensity::geom_pointdensity(size = 0.2, adjust = 0.5)+
+  geom_abline(slope = 1, color = "red4", alpha = 0.5)+
+  facet_wrap(~treatment, scales = "free")+
+  theme_pubr()+
+  ylab(TeX("Exponential model ($\\delta_{exp}$)"))+
+  xlab(TeX("2-parameter model w Maturation ($\\delta_{mat}$)"))+
+  labs(title = "AIC scores")+
+  xlim(-350,-100)+
+  ylim(-350,-100)+
+  theme(text = element_text(size = 12),#changed to 12 for GRC from 8
+        axis.text.x = element_text(angle = 30), 
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        strip.background = element_blank(),
+        legend.key.size = unit(1.5,"mm"),
+        legend.position = c(0.95,0.2),
+        legend.background = element_blank(),
+        legend.direction = "vertical",
+        legend.title = element_blank())
+```
+
+##dy scatter plot with PI
+```{r}
+figs2.prtIn %>% 
+  filter(rfp.mean.bg.sub.puncta > 0,
+         treatment != "none") %>% 
+filter(model %in% c("dy.dm","exponential")) %>%
+  group_by(cell.id) %>% 
+  filter(!(is.na(dy)), 
+         ifelse(degron == "5uM", dy > 0.005000000, dy < 0.5)) %>% 
+  dplyr::select(cell.id, treatment, dm,dy,aic, model, colony) %>% 
+  ungroup() %>% 
+  pivot_wider(values_from = c("dy","aic","dm"), names_from = "model")  %>% 
+  mutate(dm_dy.dm = ifelse(is.na(dm_dy.dm), Inf, dm_dy.dm),
+    dm.level = ifelse(dm_dy.dm > 1, "high", "low")) %>%
+  mutate( treatment = case_when(treatment %in% c("dmso1","dmso2") ~ "DMSO",
+                                TRUE ~ treatment), 
+         treatment = factor(treatment, levels = c("DMSO","1uM","2.5uM","5uM","50uM"))) %>% 
+  ggplot(.,aes(y = dy_exponential, x = dy_dy.dm))+
+  # geom_hex(bins = 100)+
+  ggpointdensity::geom_pointdensity(size = 0.2, adjust = 0.5)+
+  geom_abline(slope = 1, color = "red4", alpha = 0.5)+
+  facet_wrap(~treatment, scales = "free")+
+  theme_pubr()+
+  ylab(TeX("Exponential model ($\\delta_{exp}$)"))+
+  xlab(TeX("2-parameter model w Maturation ($\\delta_{mat}$)"))+
+  labs(title = "Rate of Decay")+
+  theme(text = element_text(size = 12),#changed to 12 for GRC from 8
+        axis.text.x = element_text(angle = 30), 
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        strip.background = element_blank(),
+        legend.key.size = unit(1.5,"mm"),
+        legend.position = c(0.95,0.2),
+        legend.background = element_blank(),
+        legend.direction = "vertical",
+        legend.title = element_blank())
+```
+
+models with least AIC scores
+```{r}
+least.aic.plt <- figS2.df %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  filter(model %in% c("dy.dm","exponential")) %>% 
+  filter(degron %in% c("mODC","mODC.2","cln2","cln2.3","cln2.2","stable.2","stable"), treatment == "none", red == "pup1-rfp") %>%
+  group_by(cell.id) %>% 
+  filter(aic == min(aic)) %>% 
+  ungroup() %>% 
+  # pivot_wider(names_from = name, values_from = value) %>% 
+  group_by(degron, colony,model) %>% 
+  tally() %>% 
+  mutate(perc = (n/sum(n))*100) %>% 
+  ungroup() %>% 
+  mutate(degron = case_when(degron %in% c("mODC","mODC.2") ~ "GFP-mODC",
+                            degron %in% c("cln2.2","cln2","cln2.3") ~ "GFP-CLN2",
+                            degron %in% c("stable","stable.2") ~ "GFP"), 
+         degron = factor(degron, levels = c("GFP-mODC","GFP-CLN2","GFP"))) %>% 
+  mutate(model = case_when(model == "dy.dm" ~ "Eq 6",
+                           model == "exponential" ~ "Eq 8")) %>% 
+  ggplot(.,aes(x = model, y= perc, color = colony))+
+  geom_jitter(width = 0.2, height = 0)+
+  stat_summary(fun.y = mean, fun.ymin = mean, fun.ymax = mean,
+                 geom = "crossbar", width = 0.5)+
+  facet_wrap(~degron, scales = "free_y", ncol = 3)+
+  theme_pubr()+
+  theme(text = element_text(size = 8), 
+        legend.position = "bottom", 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(4 ,"mm"))
+
+least.aic.plt
+```
+#patchwork
+```{r fig.width= 5.5, fig.height= 4}
+left.sec <- aic.score.plt
+mid.sec <- dy.models.den.plt
+right.sec <- underEst.bx.plt
+figs2.final <- ((aic.score.ptDenPlt/dy.models.scatPlt)|(dm.per.low.BarPlt/underEst.bx.plt))+
+  plot_layout(widths = c(0.65,0.35))+
+  plot_annotation(tag_levels = "A")
+# right.sec <- pup1RFP.halfLives
+
+figs2.final
+```
+
+```{r}
+
+ggsave(plot = figs2.final, path = "~/plots/paper1/figures/fig_1/supplemental_figs/fig_s2/", filename = "aic_dy_unest.pdf", width = 8, height = 6 )
+ggsave(plot = figs2.final, path = "~/plots/paper1/figures/fig_1/supplemental_figs/fig_s2/", filename = "aic_dy_unest.png", width = 8, height = 6 )
+```
+
+#saving individual plots
+```{r}
+ggsave(plot = aic.score.ptDenPlt, path = "~/plots/paper1/figures/fig_1/supplemental_figs/fig_s2/GRC/", filename = "aic_scatterPlt.pdf", width = 6, height = 3 )
+ggsave(plot = dy.models.scatPlt, path = "~/plots/paper1/figures/fig_1/supplemental_figs/fig_s2/GRC/", filename = "dy_scatterPlt.pdf", width = 5, height = 3 )
+ggsave(plot = dm.per.low.BarPlt, path = "~/plots/paper1/figures/fig_1/supplemental_figs/fig_s2/GRC/", filename = "dm_percent.pdf", width = 5, height = 3 )
+ggsave(plot = underEst.bx.plt, path = "~/plots/paper1/figures/fig_1/supplemental_figs/fig_s2/GRC/", filename = "under_est.pdf", width = 5, height = 4)
+```
+
+#looking at non-exponential decay 
+add the timelapse data
+```{r}
+all.exp.list <- read_csv("~/plots/all_data/all_exp_data.csv")
+```
+
+with protein inhibition
+```{r}
+all.exp.list %>% 
+  filter(treatment != "none") %>% 
+  filter(cell.id %in% unique(aic.df$cell.id)) %>% 
+  left_join(.,aic.df %>% 
+              filter(model == "dy.dm") %>% 
+              dplyr::select(cell.id, dm,dy, model,colony), 
+            by = "cell.id") %>% 
+  group_by(cell.id) %>% 
+  mutate(dm.level = ifelse(dm < 1, "low", "high"),
+         gfp.int = gfpMeanBgAFsub[1]) %>% 
+  na.omit() %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  split(.$treatment) %>% 
+  map(.,function(a){
+    temp.1 <- a
+      # filter(cell.id %in% sample(a$cell.id, 5)) 
+    
+    slope.df <- a %>% 
+      filter(cell.id %in% temp.1$cell.id) %>% 
+      mutate(slope1 = (log(It_I0[31]) - 0)/((delta.time[31]/60) - 0) )
+    
+    temp.1 %>% 
+  ggplot(.,aes(x = delta.time/60, y = log(It_I0), group = cell.id, color = cell.id))+
+  geom_line(alpha = 0.2)+
+  guides(color = "none") +
+  geom_abline(data = slope.df , aes(intercept = 0, slope = slope.df$slope1, color = cell.id))+
+  facet_wrap(~dm.level, scales = "free_x")+
+  theme_pubr()+
+      labs(title = a$treatment[1])
+  })
+
+```
+
+are the dm values > dy ? 
+```{r}
+figS2.df %>% 
+  filter(degron == "mODC.2") %>% 
+  filter(model == "dy.dm", dm < 1) %>%
+  ggplot(.,aes(x = dy, y = dm))+
+  geom_point()+
+  stat_cor()+
+  geom_abline(slope = 1)
+  
+```
+```{r}
+all.exp.list %>% 
+  filter(treatment == "none", red == "pup1-rfp") %>% 
+  filter(cell.id %in% unique(aic.df$cell.id)) %>% 
+  left_join(.,aic.df %>% 
+              filter(model == "dy.dm") %>% 
+              dplyr::select(cell.id, dm,dy, model,colony), 
+            by = "cell.id") %>% 
+  group_by(cell.id) %>% 
+  mutate(dm.level = ifelse(dm < 1, "low", "high"),
+         gfp.int = gfpMeanBgAFsub[1]) %>% 
+  na.omit() %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  ggplot(.,aes(x = delta.time/60, y = log(It_I0), group = cell.id))+
+  geom_line(alpha = 0.2)+
+  facet_wrap(~degron, scales = "free")+
+  theme_pubr()
+```
+
+
+for experiments without protein inhibition
+```{r}
+all.exp.list %>% 
+  filter(treatment == "none") %>% 
+  filter(cell.id %in% unique(aic.df$cell.id)) %>% 
+  left_join(.,aic.df %>% 
+              filter(model == "dy.dm") %>% 
+              dplyr::select(cell.id, dm,dy, model,colony), 
+            by = "cell.id") %>% 
+  group_by(cell.id) %>% 
+  mutate(dm.level = ifelse(dm < 1, "low", "high"),
+         gfp.int = gfpMeanBgAFsub[1]) %>% 
+  na.omit() %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  split(.$degron) %>% 
+  map(.,function(a){
+    temp.1 <- a %>% 
+      filter(cell.id %in% sample(a$cell.id, 5)) 
+    
+    slope.df <- a %>% 
+      filter(cell.id %in% temp.1$cell.id) %>% 
+      mutate(slope1 = (log(It_I0[31]) - 0)/((delta.time[31]/60) - 0) )
+    
+    temp.1 %>% 
+  ggplot(.,aes(x = delta.time/60, y = log(It_I0), group = cell.id, color = cell.id))+
+  geom_line(alpha = 0.2)+
+      guides(color = "none")+
+  geom_abline(data = slope.df , aes(intercept = 0, slope = slope.df$slope1, color = cell.id))+
+  facet_wrap(~dm.level, scales = "free_x")+
+  theme_pubr()+
+  labs(title = a$degron[1])
+  })
+
+
+```
+
+```{r}
+deviation.exp <- all.exp.list %>% 
+  filter(treatment == "none") %>% 
+  filter(cell.id %in% unique(aic.df$cell.id)) %>% 
+  left_join(.,aic.df %>% 
+              filter(model %in% c("dy.dm", "exponential")) %>% 
+              dplyr::select(cell.id, dm,dy, model,colony), 
+            by = "cell.id") %>% 
+  group_by(cell.id) %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm),
+    dm.level = ifelse(dm < 1, "low", "high"),
+         gfp.int = gfpMeanBgAFsub[1]) %>% 
+  na.omit() %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  mutate(slope1 = (log(It_I0[31]) - 0)/((delta.time[31]/60) - 0),
+         ln.It_I0 = log(It_I0),
+         new.It_I0 = slope1*delta.time/60) %>% 
+  filter(image.no == 15) %>% 
+  pivot_wider(values_from = dy, names_from = model)
+  mutate(delta.y = ln.It_I0 - new.It_I0) %>% 
+  dplyr::select(delta.y, cell.id, dy, dm) %>% 
+  left_join(.,pup1.cell.attr, by = "cell.id")
+
+```
+
+```{r}
+deviation.exp %>% 
+  filter(red == "pup1-rfp") %>% 
+  filter(degron == "cln2.3") %>% 
+  ggplot(.,aes(y = delta.y , x = gfp.mean.bg.af.sub.new))+
+  ggpointdensity::geom_pointdensity(size = 0.2)+
+  geom_smooth(method = "lm")+
+  stat_cor()+
+  geom_hline(yintercept = 0)+
+  facet_wrap(colony~degron, scales = "free")
+
+deviation.exp %>% 
+  filter(red == "pup1-rfp", dm > 0.0001) %>% 
+  ggplot(.,aes(y = delta.y , x = gfp.mean.bg.af.sub.new))+
+  ggpointdensity::geom_pointdensity(size = 0.2)+
+  geom_smooth(method = "lm")+
+  stat_cor()+
+  geom_hline(yintercept = 0)+
+  facet_wrap(~degron, scales = "free")
+
+
+deviation.exp %>% 
+  filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3")) %>% 
+  filter(red == "pup1-rfp") %>% 
+  ggplot(.,aes(x = delta.y , fill = degron))+
+  geom_density(aes(y = ..scaled..), alpha = 0.5)
+
+deviation.exp %>% 
+  filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3")) %>% 
+  filter(red == "pup1-rfp") %>% 
+  mutate(dm.level = ifelse(dm > 10, "high","low")) %>% 
+  ggplot(.,aes(x = delta.y , fill = dm.level))+
+  geom_density(aes(y = ..scaled..), alpha = 0.5)+
+  facet_wrap(~degron, scales = "free")+
+  geom_vline(xintercept = 0)+
+  xlim(-0.5,1)
+
+```
+
+```{r}
+deviation.exp.PrtIn <- all.exp.list %>% 
+  filter(cell.id %in% unique(aic.df$cell.id)) %>% 
+  left_join(.,aic.df %>% 
+              filter(model == "dy.dm") %>% 
+              dplyr::select(cell.id, dm,dy, model,colony), 
+            by = "cell.id") %>% 
+  group_by(cell.id) %>% 
+  mutate(dm.level = ifelse(dm < 1, "low", "high"),
+         gfp.int = gfpMeanBgAFsub[1]) %>% 
+  na.omit() %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  mutate(slope1 = (log(It_I0[31]) - 0)/((delta.time[31]/60) - 0),
+         ln.It_I0 = log(It_I0),
+         new.It_I0 = slope1*delta.time/60) %>% 
+  filter(image.no == 15) %>% 
+  mutate(delta.y = ln.It_I0 - new.It_I0) %>% 
+  dplyr::select(delta.y, cell.id) %>% 
+  left_join(.,protInhi.attr, by = "cell.id") %>% 
+  filter(treatment != "none")
+```
+
+```{r}
+deviation.exp.PrtIn %>% 
+  filter(!(treatment %in% c("dmso1","50uM"))) %>% 
+  ggplot(.,aes(x = dy , fill = treatment))+
+  geom_density(aes(y = ..scaled..), alpha = 0.5)+
+  geom_vline(xintercept = 0)+
+  theme_pubr()+
+  theme(text = element_text(size = 8))
+
+deviation.exp.PrtIn %>% 
+  filter(treatment %in% c("dmso1","50uM")) %>% 
+  ggplot(.,aes(x = delta.y , fill = treatment))+
+  geom_density(aes(y = ..scaled..), alpha = 0.5)+
+  geom_vline(xintercept = 0)+
+  theme_pubr()+
+  theme(text = element_text(size = 8))
+
+deviation.exp.PrtIn %>% 
+  ggplot(.,aes(y = delta.y , x = gfp.mean.bg.af.sub.new))+
+  ggpointdensity::geom_pointdensity(size = 0.2)+
+  geom_smooth(method = "lm")+
+  stat_cor()+
+  geom_hline(yintercept = 0)+
+  facet_wrap(~treatment, scales = "free")
+```
+```{r}
+deviation.exp %>% 
+  filter(red == "pup1-rfp") %>% 
+  split(.$degron) %>% 
+  map(.,function(a){
+    a <- a %>% 
+      ungroup() %>% 
+      dplyr::select(delta.y, gfp.mean.bg.af.sub.new, rfp.mean.bg.sub.puncta, area, dapi.sum.bg.sub.puncta) %>% 
+      na.omit()
+    pcor(a)
+  })
+```
+
+```{r}
+deviation.exp %>% 
+  filter(red == "pup1-rfp") %>% 
+  filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3")) %>% 
+  mutate(degron= case_when(degron == "mODC.2" ~ "yeGFP-mODC", 
+                           degron %in% c("cln2.3","cln2.4") ~ "yeGFP-CLN2", 
+                           degron %in% c("stable.2" ,"stable.3") ~ "yeGFP"), 
+         degron = factor(degron, levels = c("yeGFP-mODC","yeGFP-CLN2","yeGFP"))) %>% 
+  ggplot(.,aes(y = delta.y , x = gfp.mean.bg.af.sub.new))+
+  ggpointdensity::geom_pointdensity(size = 0.2)+
+  geom_smooth(method = "lm")+
+  stat_cor()+
+  geom_hline(yintercept = 0)+
+  facet_wrap(~degron, scales = "free_x")
+
+deviation.exp %>% 
+  filter(red == "pup1-rfp") %>% 
+  filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3")) %>% 
+  mutate(degron= case_when(degron == "mODC.2" ~ "yeGFP-mODC", 
+                           degron %in% c("cln2.3","cln2.4") ~ "yeGFP-CLN2", 
+                           degron %in% c("stable.2" ,"stable.3") ~ "yeGFP"), 
+         degron = factor(degron, levels = c("yeGFP-mODC","yeGFP-CLN2","yeGFP"))) %>% 
+  ggplot(.,aes(x = delta.y , fill = degron))+
+  geom_density(aes(y = ..scaled..), alpha = 0.5)+
+  geom_vline(xintercept = 0)+
+  theme_pubr()+
+  theme(text = element_text(size = 8))
+```
+
+```{r}
+all.exp.list %>% 
+  filter(treatment == "none") %>% 
+  filter(cell.id %in% unique(aic.df$cell.id)) %>% 
+  left_join(.,aic.df %>% 
+              filter(model %in% c("dy.dm", "exponential")) %>% 
+              dplyr::select(cell.id, dm,dy, model,colony), 
+            by = "cell.id") %>% 
+  group_by(cell.id) %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm),
+    dm.level = ifelse(dm < 1, "low", "high"),
+         gfp.int = gfpMeanBgAFsub[1]) %>% 
+  na.omit() %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  dplyr::select(cell.id, red,model, dy, delta.time,gfpMeanBgAFsub, degron, colony, gfp.int, It_I0, image.no) %>% 
+  # filter(image.no == 10) %>% 
+  pivot_wider(values_from = dy, names_from = model) %>% 
+  mutate(new.It_I0 = -exponential*delta.time/60, 
+         ln.It_I0 = log(It_I0), 
+         delta.y =  ln.It_I0 - new.It_I0) %>% 
+  filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3")) %>% 
+  filter(red == "pup1-rfp") %>% 
+  # mutate(dm.level = ifelse(dm > 10, "high","low")) %>% 
+  ggplot(.,aes(x = delta.y, y = factor(image.no, levels = c(31:2)) ,fill = degron))+
+  stat_density_ridges(geom = "density_ridges_gradient" , 
+                      quantiles = 2, 
+                      quantile_lines = TRUE , 
+                      aes(height = ..ndensity..), 
+                      rel_min_height = 0.01, 
+                      size = 0.1)+
+  geom_vline(xintercept = 0, size = 0.5)+
+  xlim(-1,1)
+```
+```{r}
+all.exp.list %>% 
+  # filter(treatment != "none") %>% 
+  filter(cell.id %in% unique(aic.df$cell.id)) %>% 
+  left_join(.,aic.df %>% 
+              filter(model %in% c("dy.dm", "exponential")) %>% 
+              dplyr::select(cell.id, dm,dy, model,colony), 
+            by = "cell.id") %>% 
+  group_by(cell.id) %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm),
+    dm.level = ifelse(dm < 1, "low", "high"),
+         gfp.int = gfpMeanBgAFsub[1]) %>% 
+  na.omit() %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  dplyr::select(cell.id,treatment,model, dy, delta.time,gfpMeanBgAFsub, degron, colony, gfp.int, It_I0, image.no) %>% 
+  filter(image.no == 15) %>% 
+  pivot_wider(values_from = dy, names_from = model) %>% 
+  mutate(new.It_I0 = -exponential*delta.time/60, 
+         ln.It_I0 = log(It_I0), 
+         delta.y =  ln.It_I0 - new.It_I0) %>% 
+  dplyr::select(delta.y, cell.id) %>% 
+  left_join(.,protInhi.attr, by = "cell.id") %>% 
+  filter(treatment != "none") %>% 
+  filter(treatment %in% c("dmso1","50uM")) %>% 
+  # mutate(dm.level = ifelse(dm > 10, "high","low")) %>% 
+  ggplot(.,aes(x = delta.y , fill = treatment))+
+  geom_density(aes(y = ..scaled..), alpha = 0.5)+
+  geom_vline(xintercept = 0)+
+  scale_x_continuous(breaks = seq(-0.5, 0.5, by = 0.1))+
+  xlim(-0.5,0.5)
+```
+```{r}
+all.exp.list %>% 
+  # filter(treatment != "none") %>% 
+  filter(cell.id %in% unique(aic.df$cell.id)) %>% 
+  left_join(.,aic.df %>% 
+              filter(model %in% c("dy.dm", "exponential")) %>% 
+              dplyr::select(cell.id, dm,dy, model,colony), 
+            by = "cell.id") %>% 
+  group_by(cell.id) %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm),
+    dm.level = ifelse(dm < 1, "low", "high"),
+         gfp.int = gfpMeanBgAFsub[1]) %>% 
+  na.omit() %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  dplyr::select(cell.id,treatment,model, dy, delta.time,gfpMeanBgAFsub, degron, colony, gfp.int, It_I0, image.no) %>% 
+  # filter(image.no == 15) %>% 
+  pivot_wider(values_from = dy, names_from = model) %>% 
+  mutate(new.It_I0 = -exponential*delta.time/60, 
+         ln.It_I0 = log(It_I0), 
+         delta.y =  ln.It_I0 - new.It_I0) %>% 
+  dplyr::select(delta.y, cell.id, image.no) %>% 
+  left_join(.,protInhi.attr, by = c("cell.id")) %>% 
+  filter(treatment != "none") %>% 
+  filter(!(treatment %in% c("dmso1","50uM"))) %>% 
+  # mutate(dm.level = ifelse(dm > 10, "high","low")) %>% 
+ ggplot(.,aes(x = delta.y, y = factor(image.no.x, levels = c(31:2)) ,fill = treatment, alpha = 0.2))+
+  stat_density_ridges(geom = "density_ridges_gradient" , 
+                      quantiles = 2, 
+                      quantile_lines = TRUE , 
+                      aes(height = ..ndensity..), 
+                      rel_min_height = 0.01, 
+                      size = 0.1, 
+                      alpha = 0.2)+
+  facet_wrap(~treatment, scales = "free")+
+  xlim(-1,1)+
+  geom_vline(xintercept = 0)
+```
+
+

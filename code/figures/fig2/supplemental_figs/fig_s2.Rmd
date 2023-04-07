@@ -1,0 +1,553 @@
+---
+title: "Correlations"
+output: html_notebook
+---
+```{r}
+aic.df <- read_csv("~/plots/all_data/aic.csv") 
+```
+
+#add the replicate info 
+```{r}
+
+aic.df <- aic.df %>% 
+  mutate(exp.field = paste0(str_split(cell.id, "_", simplify = T)[,2],"_",
+                            str_split(cell.id, "_", simplify = T)[,3]),
+    colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8" , "20min_s9") ~ "Replicate 3"))
+
+aic.df <- aic.df %>% 
+  mutate(colony = ifelse(degron == "stable" & red == "pup1-rfp", 
+                         case_when(exp.field %in% c("20min_s4", "20min_s5") ~ "Replicate 1",
+                                   exp.field %in% c("20min_s6", "20min_s7") ~ "Replicate 2",
+                                   exp.field %in% c("20min_s8", "20min_s9") ~ "Replicate 3"), colony))
+  
+```
+
+Cellular attributes
+```{r}
+pup1.cell.attr <- read_csv("~/plots/all_data/all_pup1_cell_attr.csv")
+```
+
+#pup1-RFP background
+adding the replicate information
+```{r}
+pup1.cell.attr <- pup1.cell.attr %>% 
+  mutate(exp.field = paste0(str_split(cell.id, "_", simplify = T)[,2],"_",
+                            str_split(cell.id, "_", simplify = T)[,3]),
+    colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8" , "20min_s9") ~ "Replicate 3"))
+
+pup1.cell.attr <- pup1.cell.attr %>% 
+  mutate(colony = ifelse(degron == "stable" & red == "pup1-rfp", 
+                         case_when(exp.field %in% c("20min_s4", "20min_s5") ~ "Replicate 1",
+                                   exp.field %in% c("20min_s6", "20min_s7") ~ "Replicate 2",
+                                   exp.field %in% c("20min_s8", "20min_s9") ~ "Replicate 3"), colony)) 
+  
+```
+
+Combining the information of the decay parameters
+```{r}
+#dy.dm model for mODC
+dy.pup1.rep2.all <- aic.df %>% 
+  filter(red == "pup1-rfp", treatment == "none", degron %in% c("cln2","cln2.2","mODC", "stable")) %>% 
+  filter(ifelse(degron == "stable", dy < 0.1, dy < 0.5)) %>% 
+  group_by(cell.id) %>% 
+  filter(ifelse(degron == "mODC", model == "dy.dm", model == "exponential")) %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% 
+  filter( dm > 0.00001) 
+
+#exponential model for mODC
+dy.pup1.rep2 <- aic.df %>% 
+  filter(red == "pup1-rfp", treatment == "none", degron %in% c("cln2","cln2.2","mODC", "stable")) %>% 
+  filter(ifelse(degron == "stable", dy < 0.1, dy < 0.5)) %>% 
+  group_by(cell.id) %>% 
+  filter(model == "exponential")
+
+```
+
+```{r}
+figs2.df.all <- dy.pup1.rep2.all %>% 
+  left_join(.,pup1.cell.attr %>%
+              filter(red == "pup1-rfp", treatment == "none" , degron %in% c("cln2","cln2.2","mODC", "stable")), by = c("cell.id","treatment","degron","red","colony","exp.field"))
+
+figs2.df <- dy.pup1.rep2 %>% 
+  left_join(.,pup1.cell.attr %>%
+              filter(red == "pup1-rfp", treatment == "none" , degron %in% c("cln2","cln2.2","mODC", "stable")), by = c("cell.id","treatment","degron","red","colony","exp.field"))
+
+
+```
+
+```{r}
+figs2.df.2 <- figs2.df %>% filter(value < 0.05)
+figs2.df.all.2 <- figs2.df.all %>% filter(value < 0.05)
+```
+
+area vs dy
+```{r}
+area.pup1.rep2.plot <- figs2.df.all.2 %>% filter(degron != "cln2") %>% 
+  mutate(degron = case_when(degron == "cln2.2" ~ "GFP-CLN2",
+                            degron == "mODC" ~ "GFP-mODC", 
+                            degron == "stable" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2", "GFP"))) %>% 
+  ggplot(.,aes(x = area, y = log(2)/dy, color = colony))+
+  geom_point(size = 0.5)+
+  facet_wrap(treatment~degron, scales = "free")+
+  geom_smooth(method = "lm", se = FALSE)+
+  stat_cor()+
+  theme_pubr()+
+  theme(text = element_text(size = 8))+
+  scale_color_brewer(name = NULL, palette = "Dark2")+
+  ylab("Half-Life [Min.]")+
+  xlab("Area [A.U]")
+
+area.pup1.rep2.plot
+```
+
+dapi vs pup1-rfp
+```{r}
+figs2.df %>% 
+  filter(degron == "mODC") %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  ggplot(.,aes(x = rfp.mean.af.sub.puncta, y = gfp.mean.bg.af.sub.new, color = colony))+
+  geom_point(size = 0.5)+
+  facet_wrap(~degron, scales = "free")+
+  stat_cor()+
+  theme_pubr()+
+  theme(text = element_text(size = 8))
+
+figs2.df %>% 
+  filter(degron == "mODC") %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  ggplot(.,aes(x = dapi.mean.bg.sub, y = dapi.mean.af.sub.puncta, color = colony))+
+  geom_point(size = 0.5)+
+  facet_wrap(~degron, scales = "free")+
+  stat_cor()+
+  theme_pubr()+
+  theme(text = element_text(size = 8))
+```
+dy vs gfp intensity
+```{r}
+gfpInt.pup1.rep2.plot <- figs2.df %>% 
+  mutate(degron = case_when(degron == "cln2.2" ~ "GFP-CLN2",
+                            degron == "mODC" ~ "GFP-mODC", 
+                            degron == "stable" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2", "GFP"))) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  ggplot(.,aes(x = gfp.mean.bg.af.sub.new, y = log(2)/dy, color = colony))+
+  geom_point(size = 0.5)+
+  geom_smooth(method = "lm", se = FALSE)+
+  facet_wrap(~degron, scales = "free")+
+  stat_cor()+
+  theme_pubr()+
+  theme(text = element_text(size = 8))+
+  scale_color_brewer(name = NULL, palette = "Dark2")+
+  ylab("Half-Life [Min.]")+
+  xlab("GFP Mean Intensity [A.U]")
+
+gfpInt.pup1.rep2.plot
+
+```
+
+```{r}
+tDimerInt.pup1.rep2.plot <- figs2.df %>% 
+  mutate(degron = case_when(degron == "cln2.2" ~ "GFP-CLN2",
+                            degron == "mODC" ~ "GFP-mODC", 
+                            degron == "stable" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2", "GFP"))) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  ggplot(.,aes(x = rfp.mean.bg.sub.puncta, y = log(2)/dy, color = colony))+
+  geom_point(size = 0.5)+
+  geom_smooth(method = "lm", se = FALSE)+
+  facet_wrap(~degron, scales = "free")+
+  stat_cor()+
+  theme_pubr()+
+  theme(text = element_text(size = 8))+
+  scale_color_brewer(name = NULL, palette = "Dark2")+
+  ylab("Half-Life [Min.]")+
+  xlab("Pup1-tDimer Mean Intensity [A.U]")
+
+tDimerInt.pup1.rep2.plot
+```
+
+#checking if the internal af sub of the rfp and dapi intensity is the same as the bg sub?
+```{r}
+#rfp
+figs2.df %>% 
+ filter(degron == "mODC") %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta >0) %>% 
+  ggplot(.,aes(x = rfp.mean.bg.sub.puncta, y = rfp.mean.af.sub.puncta, color = colony))+
+  geom_point(size = 0.5)+
+  geom_smooth(method = "lm", se = FALSE)+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  theme_pubr()+
+  theme(text = element_text(size = 8))+
+  scale_color_brewer(name = NULL, palette = "Dark2")+
+  xlab("Mean pup1-tDimer intensity of the puncta with bg subtraction")+
+  ylab("Mean pup1-tDimer intensity of the puncta with internal AF subtraction")
+
+#dapi
+figs2.df %>% 
+ filter(degron == "mODC") %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta >0) %>% 
+  ggplot(.,aes(x = dapi.sum.bg.sub.puncta, y = dapi.sum.af.sub.puncta, color = colony))+
+  geom_point(size = 0.5)+
+  geom_smooth(method = "lm", se = FALSE)+
+  geom_abline(slope = 1)+
+  stat_cor()+
+  theme_pubr()+
+  theme(text = element_text(size = 8))+
+  scale_color_brewer(name = NULL, palette = "Dark2")+
+  xlab("Total Dapi intensity of the puncta with bg subtraction")+
+  ylab("Total Dapi intensity of the puncta with internal AF subtraction")
+```
+Looks like it doesn't matter if you do an internal AF subtraction vs background subtraction
+
+#gfp mean int vs pup1-tDimer intensity
+```{r}
+figs2.df %>% 
+  mutate(degron = case_when(degron == "cln2.2" ~ "GFP-CLN2",
+                            degron == "cln2" ~"GFP-CLN2-rep1",
+                            degron == "mODC" ~ "GFP-mODC", 
+                            degron == "stable" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2-rep1","GFP-CLN2", "GFP"))) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta >0) %>% 
+  ggplot(.,aes(x = rfp.mean.bg.sub.puncta, y = gfp.mean.bg.af.sub.new, color = colony))+
+  geom_point(size = 0.5)+
+  geom_smooth(method = "lm", se = FALSE)+
+  facet_wrap(~degron, scales = "free")+
+  stat_cor()+
+  theme_pubr()+
+  theme(text = element_text(size = 8))+
+  scale_color_brewer(name = NULL, palette = "Dark2")+
+  ylab("GFP mean Int. [A.U]")+
+  xlab("pup1-tDimer mean Int. [A.U]")
+
+
+```
+
+```{r}
+dapiInt.pup1.rep1.plot.rep2 <- figs2.df.all %>% 
+  filter(value < 0.05, degron != "cln2") %>% 
+  mutate(degron = case_when(degron == "cln2.2" ~ "GFP-CLN2",
+                            degron == "mODC" ~ "GFP-mODC", 
+                            degron == "stable" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2", "GFP"))) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta >0) %>% 
+  ggplot(.,aes(x = dapi.sum.bg.sub.puncta, y = log(2)/dy, color = colony))+
+  geom_point(size = 0.5)+
+  geom_smooth(method = "lm", se = FALSE)+
+  facet_wrap(~degron, scales = "free")+
+  stat_cor()+
+  theme_pubr()+
+  theme(text = element_text(size = 8))+
+  scale_color_brewer(name = NULL, palette = "Dark2")+
+  ylab("Half-Life [Min.]")+
+  xlab("Total DAPI int. [A.U]")
+
+dapiInt.pup1.rep1.plot.rep2
+```
+
+custome function to be used with ggpairs
+```{r}
+ggpairs.custome <- function(df){
+  ggpairs.plot <- df %>% 
+  ggpairs(.,legend = 1,
+          columns = 1:7,
+    mapping = ggplot2::aes(color = colony),
+         lower = list(continuous = wrap("smooth", se = F, alpha = 0.5, size = 0.1),
+                      discrete = "blank", combo="blank"), 
+         diag = list(discrete="barDiag", 
+                     continuous = wrap("densityDiag", alpha=0.5 )),
+          upper = list(continuous = wrap("cor", size = 2.5)))+
+  theme_bw()+
+  theme(text = element_text(size = 8),
+        legend.position = "bottom",
+        panel.grid.major = element_blank())
+  
+  return(ggpairs.plot)
+}
+```
+
+
+```{r}
+#with rfp mean af sub puncta
+figs2.df %>% 
+  # filter(value < 0.05) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+  filter(degron == "mODC",
+         rfp.mean.bg.sub.puncta > 0) %>% 
+  ggpairs.custome(.)
+
+#with rfp mean bg sub puncta
+#witth exp values
+figs2.df %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+  filter(degron == "mODC",
+         rfp.mean.bg.sub.puncta > 0) %>% 
+  ggpairs.custome(.)
+
+#with rfp mean bg sub puncta
+#with dy.dm values
+figs2.df.all.2 %>% 
+  filter(dapi.sum.bg.sub.puncta < 200000) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+  filter(degron == "mODC",
+         rfp.mean.bg.sub.puncta > 0,
+         t.half < 40) %>% 
+  ggpairs.custome(.)
+
+```
+categorize based on dm 
+```{r}
+#dm < 1
+figs2.df.all %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         dm = ifelse(is.na(dm), Inf, dm),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+  filter(degron == "mODC",
+         rfp.mean.bg.sub.puncta > 0, 
+         dm < 1) %>% 
+  mutate(colony = case_when(colony == "Replicate 1" ~ "1",
+                            colony == "Replicate 2" ~ "2",
+                            colony == "Replicate 3" ~ "3")) %>% 
+  ungroup() %>% 
+  select(colony,
+    t.half, gfp.mean.bg.af.sub.new, rfp.mean.bg.sub.puncta, dapi.sum.bg.sub.puncta, area, elipe_shape) %>%
+  rename("gfp.m" = "gfp.mean.bg.af.sub.new",
+         "pup1" = "rfp.mean.bg.sub.puncta",
+         "dapi" = "dapi.sum.bg.sub.puncta") %>% 
+  ggpairs(.,legend = 1,
+          columns = 1:7,
+    mapping = ggplot2::aes(color = colony),
+         lower = list(continuous = wrap("smooth", se = F, alpha = 0.5, size = 0.1) ), 
+          upper = list(continuous = wrap("cor", size = 2.5)))+
+  theme(text = element_text(size = 8),
+        legend.position = "bottom")
+
+#dm > 1
+figs2.df.all %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         dm = ifelse(is.na(dm), Inf, dm),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+  filter(degron == "mODC",
+         rfp.mean.bg.sub.puncta > 0, 
+         dm > 1) %>% 
+  mutate(colony = case_when(colony == "Replicate 1" ~ "1",
+                            colony == "Replicate 2" ~ "2",
+                            colony == "Replicate 3" ~ "3")) %>% 
+  ungroup() %>% 
+  select(colony,
+    t.half, gfp.mean.bg.af.sub.new, rfp.mean.bg.sub.puncta, dapi.sum.bg.sub.puncta, area, elipe_shape) %>%
+  rename("gfp.m" = "gfp.mean.bg.af.sub.new",
+         "pup1" = "rfp.mean.bg.sub.puncta",
+         "dapi" = "dapi.sum.bg.sub.puncta") %>% 
+  ggpairs(.,legend = 1,
+          columns = 1:7,
+    mapping = ggplot2::aes(color = colony),
+         lower = list(continuous = wrap("smooth", se = F, alpha = 0.5, size = 0.1) ), 
+          upper = list(continuous = wrap("cor", size = 2.5)))+
+  theme(text = element_text(size = 8),
+        legend.position = "bottom")
+```
+
+
+```{r}
+figs2.df.all.2 %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+  filter(degron == "cln2", rfp.mean.bg.sub.puncta > 0) %>% 
+  ggpairs.custome(.)
+
+figs2.df.all.2 %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+  filter(degron == "cln2.2", rfp.mean.bg.sub.puncta > 0) %>% 
+  ggpairs.custome(.)
+```
+
+```{r}
+figs2.df.all.2 %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+  filter(degron == "stable",rfp.mean.bg.sub.puncta>0) %>% 
+  ggpairs.custome(.)
+
+```
+#half lives vs pup1 in pup1 bins
+
+
+
+#half lives vs dapi in dapi bins
+```{r}
+corttest.s2.all <- figs2.df.all %>% filter(degron == "mODC") %>% 
+  ungroup() %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.af.sub.puncta), 0, dapi.mean.af.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.af.sub.puncta), 0 , rfp.mean.af.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+    filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  split(list(.$degron, .$colony)) %>% 
+  map(function(a){
+    a %>% 
+    mutate(pup1_bin = cut(dapi.mean.af.sub.puncta, 
+                          breaks = quantile(.$dapi.mean.af.sub.puncta, probs = seq(0, 1, by = 0.2)))) 
+  })
+
+corttest.s2 <- figs2.df %>% filter(degron == "mODC") %>% 
+  ungroup() %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.af.sub.puncta), 0, dapi.mean.af.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.af.sub.puncta), 0 , rfp.mean.af.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+    filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  split(list(.$degron, .$colony)) %>% 
+  map(function(a){
+    a %>% 
+    mutate(pup1_bin = cut(dapi.mean.af.sub.puncta, 
+                          breaks = quantile(.$dapi.mean.af.sub.puncta, probs = seq(0, 1, by = 0.2)))) 
+  })
+```
+
+```{r}
+
+lapply(corttest.s2.all, function(a){
+  a %>% 
+    split(.$pup1_bin) %>% 
+    map(function(b){
+      cor.test(x = b$t.half, y = b$dapi.mean.bg.sub.puncta, method = "pearson", alternative = "two.sided") %>% 
+        broom::tidy()
+    }) %>% 
+    bind_rows(.id = "pup1_bin")
+}) %>%  
+  bind_rows(.id = "test") %>% 
+  separate(col = test, into = c("degron","colony"), sep = "\\.") %>% 
+  arrange(degron)
+
+lapply(corttest.s2, function(a){
+  a %>% 
+    split(.$pup1_bin) %>% 
+    map(function(b){
+      cor.test(x = b$t.half, y = b$dapi.mean.bg.sub.puncta, method = "pearson", alternative = "two.sided") %>% 
+        broom::tidy()
+    }) %>% 
+    bind_rows(.id = "pup1_bin")
+}) %>%  
+  bind_rows(.id = "test") %>% 
+  separate(col = test, into = c("degron","colony"), sep = "\\.") %>% 
+  arrange(degron)
+```
+
+```{r}
+dapi.dist.s2 <- figs2.df.all.2 %>% filter(degron != "cln2", dapi.sum.bg.sub.puncta < 200000) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  ggplot(.,aes(x = dapi.sum.bg.sub.puncta, fill = colony))+
+  geom_histogram(position = "dodge")+
+  facet_grid(colony~degron, scales = "free")+
+  theme_pubr()+
+  theme(text = element_text(size = 8))+
+  scale_color_brewer(name = NULL, palette = "Dark2")+
+  xlab("Total DAPI int. [A.U]")
+
+dapi.dist.s2
+  
+```
+#designating cells as high and low DNA content based on the median of the total DAPI intensity
+```{r}
+figs2.dapi.df <- figs2.df.all.2 %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  ungroup() %>% 
+  group_by(degron,colony) %>% 
+  mutate(cell.cycle = ifelse(dapi.sum.bg.sub.puncta > median(dapi.sum.bg.sub.puncta), "high", "low") , 
+         cell.cycle = factor(cell.cycle, levels = c("low","high")))
+```
+
+```{r}
+figs2.dapi.df %>% 
+  ungroup() %>% 
+  filter(degron == "stable") %>% 
+  ggplot(.,aes(x = cell.cycle, y = t.half))+
+  geom_boxplot(outlier.shape = NA)+
+  geom_jitter(size = 0.2, width = 0.3)+
+  stat_compare_means(method = "t.test")+
+  facet_grid(~colony, scales = "free")
+
+figs2.dapi.df %>% 
+  filter(degron == "mODC") %>% 
+  ungroup() %>% 
+  ggplot(.,aes(x = cell.cycle, y = t.half))+
+  geom_boxplot(outlier.shape = NA)+
+  geom_jitter(size = 0.2, width = 0.3)+
+  stat_compare_means(method = "t.test")+
+  facet_wrap(~colony, scales = "free")+
+  ylim(4,15)
+
+figs2.dapi.df %>% 
+  filter(degron == "cln2.2") %>% 
+  ungroup() %>% 
+  ggplot(.,aes(x = cell.cycle, y = t.half))+
+  geom_boxplot(outlier.shape = NA)+
+  geom_jitter(size = 0.2, width = 0.3)+
+  stat_compare_means(method = "t.test")+
+  facet_wrap(~colony, scales = "free")+
+  ylim(4,15)
+
+  
+```
+
+```{r}
+tef2mch.attr <- read_csv("~/plots/all_data/all_tef2-mch_attr.csv")
+
+tef2mch.attr %>% 
+  filter(degron == "mODC.3") %>% 
+  filter(cell.id %in% unique(aic.df$cell.id)) %>% 
+  left_join(.,aic.df  %>% 
+              dplyr::select(cell.id, dy, dm, aic), by = "cell.id") %>% 
+  mutate(rep.age = ifelse(no.bud.scars > 1,"old","new")) %>% 
+  ggplot(.,aes(x = rfp.mean.bg.sub, y = dy, color = rep.age))+
+  geom_point()
+```
+
+```{r}
+figs2.mch.df <- aic.df
+```
+

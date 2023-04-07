@@ -1,0 +1,1855 @@
+---
+title: "Correlations"
+output: html_notebook
+---
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(GGally)
+library(ggpubr)
+library(latex2exp)
+library(patchwork)
+
+```
+
+#load the dataframes for the figure
+```{r}
+aic.df <- read_csv("~/plots/all_data/aic.csv")
+
+aic.df %>% filter(treatment == "5uM", model == "dy.dm") %>% mutate(t.half = log(2)/dy) %>% filter(t.half > 130)
+
+```
+
+
+remove cells in the edges :
+pos.x > 45 & < 1150
+pos.y > 45 & < 1000
+##add the replicate info 
+```{r}
+aic.df <- aic.df %>% 
+  mutate(exp.field = paste0(str_split(cell.id, "_", simplify = T)[,2],"_",
+                            str_split(cell.id, "_", simplify = T)[,3]),
+    colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8" , "20min_s9") ~ "Replicate 3"))
+
+aic.df <- aic.df %>% 
+  mutate(colony = ifelse(degron == "stable" & red == "pup1-rfp", 
+                         case_when(exp.field %in% c("20min_s4", "20min_s5") ~ "Replicate 1",
+                                   exp.field %in% c("20min_s6", "20min_s7") ~ "Replicate 2",
+                                   exp.field %in% c("20min_s8", "20min_s9") ~ "Replicate 3"), colony)) 
+  
+```
+
+##Cellular attributes
+```{r}
+pup1.cell.attr <- read_csv("~/plots/all_data/all_pup1_cell_attr.csv")
+```
+
+###pup1-RFP background
+```{r}
+pup1.cell.attr <- pup1.cell.attr %>% 
+  mutate(exp.field = paste0(str_split(cell.id, "_", simplify = T)[,2],"_",
+                            str_split(cell.id, "_", simplify = T)[,3]),
+    colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8" , "20min_s9") ~ "Replicate 3"))
+
+pup1.cell.attr <- pup1.cell.attr %>% 
+  mutate(colony = ifelse(degron == "stable" & red == "pup1-rfp", 
+                         case_when(exp.field %in% c("20min_s4", "20min_s5") ~ "Replicate 1",
+                                   exp.field %in% c("20min_s6", "20min_s7") ~ "Replicate 2",
+                                   exp.field %in% c("20min_s8", "20min_s9") ~ "Replicate 3"), colony)) 
+  
+```
+
+```{r}
+#removing the 40min and 60min experiments from the stable gfp experiments
+pup1.cell.attr <- pup1.cell.attr %>%
+  mutate(exp = str_split(exp.field, "_", simplify = T)[,1]) %>% 
+  filter(exp == "20min")
+```
+
+Adding the gfp.sum column for the stable GFP experiment
+```{r}
+pup1.cell.attr <- read_csv("~/plots/pup1-rfp-gfp-decay/4-28-21-8hrGFP/data/gfp_stable_filtered.csv") %>% 
+  filter(image.no == 1) %>% 
+  dplyr::select(cell.id, gfpSumBgAFsub) %>% 
+  mutate(cell.id = paste0(cell.id,"_","stable_pup1-rfp_none")) %>% 
+  dplyr::rename("gfp.sum.bg.af.sub" = "gfpSumBgAFsub") %>% 
+  left_join(pup1.cell.attr %>% 
+              filter(degron == "stable") %>% 
+              dplyr::select(-gfp.sum.bg.af.sub),., by = "cell.id") %>% 
+  bind_rows(pup1.cell.attr %>% 
+              filter(degron != "stable"),.)
+```
+
+removing multiple entries of the cell because some cell have more than 
+```{r}
+multiple.pup1 <- pup1.cell.attr %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  group_by(cell.id) %>% 
+  tally() %>% 
+  filter(n>1)
+
+pup1.cell.attr<- pup1.cell.attr %>% 
+  group_by(cell.id) %>% 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(cell.id %in% multiple.pup1$cell.id , mean(rfp.mean.bg.sub.puncta), rfp.mean.bg.sub.puncta),
+         rfp.sum.bg.sub.puncta = ifelse(cell.id %in% multiple.pup1$cell.id, sum(rfp.mean.bg.sub.puncta), rfp.sum.bg.sub.puncta)) %>% 
+    distinct(cell.id, .keep_all = TRUE) 
+  
+```
+
+
+#proteasome inhibition experiments
+```{r}
+protInhi.attr <- read_csv("~/plots/all_data/all_mg135_attr.csv") %>% 
+  rename("cell.id" = "unique.trackID") %>% 
+  filter(timepoint == 1) %>% 
+  mutate(cell.id = paste0(cell.id ,"_",degron,"_",red,"_",treatment)) %>% 
+  mutate(exp.field = paste0(str_split(cell.id, "_", simplify = T)[,2],"_",
+                            str_split(cell.id, "_", simplify = T)[,3]),
+    colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8" , "20min_s9") ~ "Replicate 3"))
+
+multiple.proInh <- protInhi.attr %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  group_by(cell.id) %>% 
+  tally() %>% 
+  filter(n>1)
+
+protInhi.attr <- protInhi.attr %>% 
+  group_by(cell.id) %>% 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(cell.id %in% multiple.proInh$cell.id , mean(rfp.mean.bg.sub.puncta), rfp.mean.bg.sub.puncta),
+         rfp.sum.bg.sub.puncta = ifelse(cell.id %in% multiple.proInh$cell.id, sum(rfp.mean.bg.sub.puncta), rfp.sum.bg.sub.puncta)) %>% 
+    distinct(cell.id, .keep_all = TRUE)  
+  
+
+```
+Adding the protein inhibition experiment data
+```{r}
+pup1.proInhi.attr <- pup1.cell.attr %>% 
+  bind_rows(.,protInhi.attr %>% 
+              dplyr::select(-time, 
+                            -timepoint,
+                            -image.no, 
+                            -ln.gfp, 
+                            -ln.gfp.dif,
+                            -trackID,
+                            -gfp.intensity.center,
+                            -gfp.int.mean,
+                            -gfp.int.median,
+                           -gfp.int.sum,
+                           -no.of.triangles,
+                           -field,
+                           -time.dif.gfp,
+                           -real.time.gfp,
+                           -sample,
+                           -avg.gfp.bg,
+                           -Min_gfp,
+                           -gfp.mean.bg.sub,
+                           -value,
+                           -t80,
+                           -t95,
+                           -threshold,
+                           -threshold_95,
+                           -gfp.mean.bg.af.sub,
+                           -threshold_80,
+                           -Mean_gfp,
+                           -image,
+                           -experiment,
+                           -gfp.sum.bg.sub))
+```
+
+
+#keeping the dy.dm model parameters 
+```{r}
+#only dy.dm
+dy.pup1.rep1.mat <- aic.df %>% 
+  filter(red == "pup1-rfp") %>% 
+  filter(ifelse(degron %in% c("stable","stable.2","stable.3"), dy < 0.1, dy < 0.5)) %>% 
+  group_by(cell.id) %>% 
+  filter(model == "dy.dm") %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm)) %>%
+  filter( dm > 0.000015)
+```
+
+#count the number of cells in each experiment 
+```{r}
+dy.pup1.rep1.mat %>% group_by(degron, treatment) %>% tally()
+```
+#creating the df for the MLR
+```{r}
+mlr.df <- dy.pup1.rep1.mat %>% 
+  #left join with the df with cellular attributes
+  left_join(.,pup1.proInhi.attr, by = c("cell.id","red","treatment","degron", "exp.field","colony")) %>% 
+  #remove cells with no rfp puncta info 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0)
+```
+
+#checking how many cells there are in each experiment 
+```{r}
+mlr.df %>% group_by(degron, treatment) %>% tally()
+```
+#looking the placement of single cells in images
+```{r}
+mlr.df %>% 
+  filter()
+  ggplot(.,aes(x = pos.x, y = pos.y))+
+  geom_point()+
+  facet_wrap(~degron)
+```
+##Removing the columns that I wont regress upon
+```{r}
+mlr.df <- mlr.df %>% 
+  filter(pos.x > 45 & pos.x < 1150,
+  pos.y > 45 & pos.y < 1000) %>%
+  dplyr::select(-f, 
+         -rfp.mean.af.sub.puncta,
+         -rfp.sum.af.sub.puncta, 
+         -dapi.sum.af.sub.puncta,
+         -dapi.mean.af.sub.puncta,
+         -model, 
+         -k,
+         -fevals,
+         -gevals, 
+         -niter, 
+         -convcode, 
+         -kkt1,
+         -kkt2,
+         -value,
+         -xtime, 
+         # -treatment,
+         -rfp.mean.bg.sub,
+         -rfp.sum.bg.sub,
+         -dapi.mean.bg.sub,
+         -dapi.sum.bg.sub,
+         -dapi.mean.bg.sub.puncta,
+         -area.puncta,
+         -BB_B,
+         -BB_C,
+         -pos.x,
+         -pos.y,
+         -gfp.sum.bg.af.sub,
+         -rfp.sum.bg.sub.puncta,
+         -no.of.voxels,
+         -volume,
+         -spheracity) %>% 
+  mutate(shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>%
+  ungroup() %>%
+  dplyr::select(-cell.id, 
+                -red,
+                -exp.field, 
+                -aic,
+                -Elip_B,
+                -Elip_C, 
+                -exp) 
+```
+
+#Regressors to use for MLR
+```{r}
+regressors <- c("dm",
+                "gfp.mean.bg.af.sub.new",
+                # "gfp.sum.bg.af.sub",
+                "area",
+                # "no.of.voxels",
+                # "spheracity",
+                # "volume",
+                "rfp.mean.bg.sub.puncta",
+                # "rfp.sum.bg.sub.puncta",
+                "dapi.sum.bg.sub.puncta",
+                "shape")
+```
+
+Function to evaluate step R 
+```{r}
+stepR.fn <- function(reg, df, prt.inh.trt, id.var) {
+  #get the estimates
+  stepR.est <-
+    lapply(reg, function(a) {
+      #regressors to remove one by one
+      temp.df2 <- df %>%
+        dplyr::select(all_of(reg), 
+                      degron,
+                      t.half,
+                      # dy, 
+                      colony, 
+                      treatment) %>% #removed t.half and replaced with dy
+        ungroup() %>%
+        dplyr::select(-a)
+      
+      temp.df2 %>%
+        filter(treatment %in% prt.inh.trt) %>%
+        split(.[id.var]) %>%
+        map(., function(b) {
+          lm(t.half ~ .,
+             data = b %>% dplyr::select(-degron, -colony, -treatment)) %>%
+            broom::tidy()
+        }) %>%
+        bind_rows(.id = id.var) %>%
+        mutate(removed.col = a)
+      
+    }) %>%
+    bind_rows()
+  
+  #get the stats of the model
+  stepR.glance <- lapply(reg, function(a) {
+    temp.df2 <- df %>%
+      dplyr::select(all_of(reg), degron, t.half,
+                    # dy, 
+                    colony, treatment) %>% #removed t.half and replaced with dy
+      dplyr::select(-a)
+    
+    temp.df2 %>%
+      filter(treatment %in% prt.inh.trt) %>%
+      split(.[id.var]) %>%
+      map(., function(b) {
+        lm(t.half ~ .,
+           data = b %>% dplyr::select(-degron,-colony,-treatment)) %>%
+          broom::glance()
+      }) %>%
+      bind_rows(.id = id.var) %>%
+      mutate(removed.col = a)
+    
+  }) %>%
+    bind_rows()
+  
+  #get the fits
+  stepR.fit <- lapply(reg, function(a) {
+    temp.df2 <- df %>%
+      dplyr::select(all_of(reg), degron, t.half,
+                    # dy, 
+                    colony, treatment) %>% #removed t.half and replaced with dy
+      dplyr::select(-a)
+    
+    temp.df2 %>%
+      filter(treatment %in% prt.inh.trt) %>%
+      split(.[id.var]) %>%
+      map(., function(b) {
+        lm(t.half ~ .,
+           data = b %>% dplyr::select(-degron, -colony,-treatment))
+      })
+  })
+  
+  #output
+  stepR.list <- list(stepR.est,
+                     stepR.glance,
+                     stepR.fit)
+  
+  names(stepR.list) <- c("stepR.est",
+                         "stepR.glance",
+                         "stepR.fit")
+  return(stepR.list)
+}
+```
+
+function to evaluate the full model
+```{r}
+fullMLR.fn <- function(regressors, df, prt.inh.trt, id.var) {
+  #statistics
+  fullR.glance <- df %>%
+    ungroup() %>%
+    filter(treatment %in% prt.inh.trt) %>%
+    dplyr::select(all_of(regressors), 
+                  degron, 
+                  t.half,
+                  # dy, 
+                  colony, 
+                  treatment) %>% #removed t.half and replaced with dy
+    split(.[id.var]) %>%
+    map(., function(b) {
+      lm(t.half ~ .,
+         data = b %>% dplyr::select(-degron, -colony, -treatment)) %>%
+        broom::glance()
+    }) %>%
+    bind_rows(.id = id.var) %>%
+    mutate(removed.col = "none")
+  
+  #estimates
+  fullR.est <- df %>%
+    ungroup() %>%
+    filter(treatment %in% prt.inh.trt) %>%
+    dplyr::select(all_of(regressors), 
+                  degron,
+                  t.half,
+                  # dy, 
+                  colony, 
+                  treatment) %>% #removed t.half and replaced with dy
+    split(.[id.var]) %>%
+    map(., function(b) {
+      lm(t.half ~ .,
+         data = b %>% dplyr::select(-degron, -colony,-treatment)) %>%
+        broom::tidy()
+    }) %>%
+    bind_rows(.id = id.var) %>%
+    mutate(removed.col = "none")
+  
+  #fits
+  fullMLR.fit <- df %>%
+    ungroup() %>%
+    filter(treatment %in% prt.inh.trt) %>%
+    dplyr::select(all_of(regressors), 
+                  degron, 
+                  t.half,
+                  # dy, 
+                  colony, 
+                  treatment) %>% #removed t.half and replaced with dy
+    split(.[id.var]) %>%
+    map(., function(b) {
+      lm(t.half ~ .,
+         data = b %>% dplyr::select(-degron, -colony, -treatment))
+    })
+  
+  #output
+  fullMLR.list <- list(fullR.glance,
+                       fullR.est,
+                       fullMLR.fit)
+  
+  names(fullMLR.list) <- c("fullR.glance",
+                           "fullR.est",
+                           "fullMLR.fit")
+  return(fullMLR.list)
+}
+```
+
+#df where the two experiments of cln2 and stable-GFP are clubbed 
+```{r}
+mlr.df2 <- mlr.df %>% 
+  filter(degron %in% c("cln2.3","mODC.2","stable.3","stable.2","cln2.4")) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "yeGFP-CLN2",
+                            degron %in% c("mODC.2", "mODC")  ~ "yeGFP-mODC",
+                            degron %in% c("stable","stable.2","stable.3") ~ "yeGFP")) 
+  
+```
+
+step MLR estimates 
+#without the protein inhibition
+```{r}
+stepR.list <- stepR.fn(reg = regressors, 
+         df = mlr.df2,
+         prt.inh.trt = "none",
+        id.var = "degron")
+
+fullR.list <- fullMLR.fn(reg = regressors,
+                         df = mlr.df2,
+                         prt.inh.trt = "none",
+                         id.var = "degron")
+```
+
+
+#2D correlation plots
+```{r}
+lapply(regressors[1], function(a){
+  mlr.df %>% 
+    filter(treatment != "none") %>% 
+  mutate(t.half = log(2)/dy) %>%
+    # filter(degron %in% c("stable.2","stable.3")) %>% 
+    # filter(!(degron %in% c("mODC","cln2.2","cln2","stable"))) %>% 
+    # filter(treatment %in% c("dmso1","dmso2")) %>%  %>% 
+      ggplot(.,aes(y = t.half, x = .[[a]]))+
+    geom_point()+
+    stat_cor()+
+    # stat_regline_equation()+
+    facet_wrap(~treatment , scales = "free")+
+    labs(title = a)+
+    scale_x_log10()
+  
+})
+
+```
+
+#y~x + c single variable regression
+single regressor statistics
+```{r}
+stepR.1var <- lapply(regressors, function(a){
+  temp.df2 <- mlr.df %>% 
+    ungroup() %>% 
+    dplyr::select(a, t.half,degron)
+  
+  temp.df2 %>% 
+    split(.$degron) %>% 
+    map(.,function(b){
+      lm(t.half ~ ., data = b %>% dplyr::select(-degron)) %>% 
+        broom::glance()
+    }) %>% 
+    bind_rows(.id = "degron") %>% 
+    mutate(single.col = a)
+   
+}) %>% 
+  bind_rows()
+```
+
+single regressor estimates 
+```{r}
+stepR.1var.est <- lapply(regressors, function(a){
+  temp.df2 <- temp.df %>% 
+    ungroup() %>% 
+    dplyr::select(a, t.half,degron)
+  
+  temp.df2 %>% 
+    split(.$degron) %>% 
+    map(.,function(b){
+      lm(t.half ~ ., data = b %>% dplyr::select(-degron)) %>% 
+        broom::tidy()
+    }) %>% 
+    bind_rows(.id = "degron") %>% 
+    mutate(single.col = a)
+   
+}) %>% 
+  bind_rows()
+
+#fits
+stepR.1var.fit <- lapply(regressors, function(a){
+  temp.df2 <- mlr.df %>% 
+    ungroup() %>% 
+    dplyr::select(a, t.half,degron)
+  
+  temp.df2 %>% 
+    split(.$degron) %>% 
+    map(.,function(b){
+      lm(t.half ~ ., data = b %>% dplyr::select(-degron)) 
+    }) 
+}) 
+```
+
+#testing for one degron
+```{r}
+cln2.3.df <- temp.df %>% 
+  filter(degron == "cln2.3") %>% 
+  ungroup() %>% 
+  select(-dy,-degron)
+
+lm(t.half ~ gfp.mean.bg.af.sub.new 
+   + rfp.sum.bg.sub.puncta 
+   + area 
+   - no.of.voxels 
+   - dapi.sum.bg.sub.puncta 
+   + spheracity
+   + shape
+   + volume
+     , data = cln2.3.df ) %>% 
+  summary()
+```
+
+#plotting the difference in r2 (full model - dropout model)
+```{r}
+deltaR2.plt.all <- bind_rows(fullR.list$fullR.glance, stepR.list$stepR.glance) %>%
+    mutate(adj.r.squared = round(adj.r.squared , digits = 4)) %>% 
+  # separate(.,degron, into = c("degron","colony"), sep = ".Replicate ") %>%  
+   # filter(p.value < 0.05) %>% 
+  # group_by(degron, removed.col) %>% 
+  dplyr::select(degron, r.squared, removed.col) %>% 
+  pivot_wider(values_from = r.squared, names_from = removed.col) %>% 
+  rename("Rate of Maturation" = "dm", 
+         "GFP" = "gfp.mean.bg.af.sub.new",
+         "Area" = "area",
+         "Pup1-tDimer2" = "rfp.mean.bg.sub.puncta",
+         "DAPI" = "dapi.sum.bg.sub.puncta",
+         "Shape" = "shape") %>% 
+  pivot_longer(cols = 3:8) %>% 
+  mutate(value.ratio = value/ none,
+         value.sub = none - value) %>% 
+  # filter(degron %in% c("cln2.3","mODC.2","stable.3","stable.2","cln2.4")) %>% 
+  # mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "GFP-CLN2",
+  #                           degron %in% c("mODC.2", "mODC")  ~ "GFP-mODC",
+  #                           degron %in% c("stable","stable.2","stable.3") ~ "yeGFP"),
+  #        degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","yeGFP"))) %>%
+  mutate(degron = factor(degron , levels = c("yeGFP-mODC","yeGFP-CLN2","yeGFP"))) %>% 
+  ggplot(.,aes(y = name, x = value.sub))+
+  geom_col(width = 0.2)+
+  facet_wrap(~degron, scales = "free")+
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 10))+
+  xlab(TeX("$Delta(r^{2}_{full} - r^{2}_{step})"))+
+  ylab("Regressor Dropped")+
+  theme_pubr()+
+  theme(text = element_text(size = 8), 
+        strip.background = element_blank(),
+        axis.text.x = element_text(angle = 30))
+
+deltaR2.plt.all
+```
+
+#transform dm and dapi intensity
+```{r}
+stepR.list.trans <- stepR.fn(reg = regressors, 
+         df = mlr.df2 %>% 
+           mutate(dm = log10(dm)),
+         prt.inh.trt = "none",
+        id.var = "degron")
+
+fullR.list.trans <- fullMLR.fn(reg = regressors,
+                         df = mlr.df2 %>% 
+           mutate(dm = log10(dm)),
+                         prt.inh.trt = "none",
+                         id.var = "degron")
+```
+
+```{r}
+bind_rows(fullR.list.trans$fullR.glance, stepR.list.trans$stepR.glance) %>%
+    mutate(adj.r.squared = round(adj.r.squared , digits = 4)) %>% 
+  select(degron, r.squared, removed.col) %>% 
+  pivot_wider(values_from = r.squared, names_from = removed.col) %>% 
+  rename("Rate of Maturation" = "dm", 
+         "GFP intensity" = "gfp.mean.bg.af.sub.new",
+         "Area" = "area",
+         "Pup1-tDimer" = "rfp.mean.bg.sub.puncta",
+         "Total DAPI Int." = "dapi.sum.bg.sub.puncta",
+         "Cellular Shape" = "shape") %>% 
+  pivot_longer(cols = 3:8) %>% 
+  mutate(value.ratio = value/ none,
+         value.sub = none - value) %>% 
+  # filter(degron %in% c("cln2.3","mODC.2","stable.3","stable.2","cln2.4")) %>% 
+  # mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "GFP-CLN2",
+  #                           degron %in% c("mODC.2", "mODC")  ~ "GFP-mODC",
+  #                           degron %in% c("stable","stable.2","stable.3") ~ "yeGFP"),
+  #        degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","yeGFP"))) %>%
+  mutate(degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","yeGFP"))) %>% 
+  ggplot(.,aes(y = name, x = value.sub))+
+  geom_col(width = 0.2)+
+  facet_wrap(~degron, scales = "free")+
+  theme_pubr()+
+  theme(text = element_text(size = 8), 
+        axis.text.x = element_text(angle = 30))+
+  # scale_x_log10()+
+  xlab(TeX("$Delta(r^{2}_{full} - r^{2}_{step})"))+
+  ylab("Regressor Dropped")+
+  theme(text = element_text(size = 8))
+
+
+```
+
+#look at the sign of the estimates 
+```{r}
+fullR.list.trans$fullR.est %>% split(.$degron)
+
+lm(t.half ~ rfp.mean.bg.sub.puncta + dm + gfp.mean.bg.af.sub.new + dapi.sum.bg.sub.puncta, data = mlr.df2 %>% filter(degron == "GFP-mODC"))
+```
+
+#residual analysis of the models
+```{r}
+#residual plots against the fitted values
+fullMLR.fit %>% 
+  map(.,autoplot)
+
+
+#residual plots against the regressors
+fullMLR.fit %>% 
+  map(.,function(a){
+    plt.df <- a$model %>% 
+      mutate(dm = log10(dm),
+        res = a$residuals) %>% 
+      pivot_longer(cols = 2:7)
+    
+    plt.df %>% 
+      ggplot(.,aes(x = value, y = res))+
+      geom_point()+
+      geom_hline(yintercept = 0, color = "red4")+
+      facet_wrap(~name, scales = "free")+
+      xlab("Regressor")+
+      ylab("Residuals")
+      
+  })
+
+
+```
+Observations: 
+from the residual vs fitted plots: 
+For the degron GFPs the residual vs the fitted plot lies around the horizonttal band around 0. 
+but for stable GFP, the residual plot is an open funnel shape. 
+According to page 139 in the intro to linear regression: 
+The patterns in panels b and c indicate that the variance of the errors is not constant. The outward-opening funnel pattern in panel b implies that the variance is an increasing function of y. 
+From the residuals vs regressors plots:
+in yeGFP: there is a strong funnel shape with the GFP intensity: residuals is negatively related to the GFP intensity. 
+
+#t.half vs dm 
+```{r}
+mlr.df %>% 
+  ggplot(.,aes(x = dm, y = dy))+
+  geom_point()+
+  facet_wrap(~degron, scales = "free")+
+  scale_x_log10()
+```
+
+testing multiple colinearity using the full model 
+method = variance inflation factors. vif > 5 for a regressor is problematic
+```{r}
+library(car)
+
+fullR.list$fullMLR.fit %>% map(.,vif)
+
+```
+
+#only the gfp, rfp, dapi regrrssors 
+```{r}
+regressors.fp <- c("gfp.mean.bg.af.sub.new",
+                   "rfp.mean.bg.sub.puncta",
+                   "dapi.sum.bg.sub.puncta")
+
+stepR.fp.list <- stepR.fn(reg = regressors.fp, 
+                          df = mlr.df2,
+                          prt.inh.trt = "none",
+                          id.var = "degron")
+
+fullR.fp.list <- fullMLR.fn(regressors = regressors.fp, 
+                          df = mlr.df2,
+                          prt.inh.trt = "none",
+                          id.var = "degron")
+```
+
+#variance inflation factor
+```{r}
+vif(full.fp.fit$cln2.3) 
+vif(full.fp.fit$cln2.4) 
+vif(full.fp.fit$mODC.2) 
+vif(full.fp.fit$stable.3)
+vif(full.fp.fit$stable.2) 
+```
+
+#delta r2 for only the fluorescent proteins as the regressors
+```{r}
+deltaR2.plt <- bind_rows(fullR.fp.list$fullR.glance, stepR.fp.list$stepR.glance) %>%
+    mutate(adj.r.squared = round(adj.r.squared , digits = 4)) %>% 
+  # separate(.,degron, into = c("degron","colony"), sep = ".Replicate ") %>%  
+   # filter(p.value < 0.05) %>% 
+  # group_by(degron, removed.col) %>% 
+  dplyr::select(degron, r.squared, removed.col) %>% 
+  pivot_wider(values_from = r.squared, names_from = removed.col) %>% 
+  rename("GFP intensity" = "gfp.mean.bg.af.sub.new",
+         "Pup1-tDimer" = "rfp.mean.bg.sub.puncta",
+         "Total DAPI Int." = "dapi.sum.bg.sub.puncta") %>% 
+  pivot_longer(cols = 3:5) %>% 
+  mutate(value.ratio = value/ none,
+         value.sub = none - value) %>% 
+  # filter(degron %in% c("cln2.3","mODC.2","stable.3","stable.2","cln2.4")) %>% 
+  # mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "GFP-CLN2",
+  #                           degron %in% c("mODC.2", "mODC")  ~ "GFP-mODC",
+  #                           degron %in% c("stable","stable.2","stable.3") ~ "yeGFP"),
+  #        degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","yeGFP"))) %>%
+  mutate(degron = factor(degron , levels = c("yeGFP-mODC","yeGFP-CLN2","yeGFP"))) %>% 
+  ggplot(.,aes(y = name, x = value.sub))+
+  geom_col(width = 0.2)+
+  facet_wrap(~degron, scales = "free")+
+  theme(text = element_text(size = 8))+
+  # scale_x_log10()+
+  xlab(TeX("$Delta(r^{2}_{full} - r^{2}_{step})"))+
+  ylab("Regressor Dropped")+
+  theme_pubr()+
+  theme(text = element_text(size = 8))
+
+deltaR2.plt
+```
+#response == dy instead of t.half 
+```{r}
+bind_rows(fullR.fp.list$fullR.glance, stepR.fp.list$stepR.glance) %>%
+    mutate(adj.r.squared = round(adj.r.squared , digits = 4)) %>% 
+  # separate(.,degron, into = c("degron","colony"), sep = ".Replicate ") %>%  
+   filter(p.value < 0.05) %>% 
+  # group_by(degron, removed.col) %>% 
+  select(degron, r.squared, removed.col) %>% 
+  pivot_wider(values_from = r.squared, names_from = removed.col) %>% 
+  rename("GFP intensity" = "gfp.mean.bg.af.sub.new",
+         "Pup1-tDimer" = "rfp.mean.bg.sub.puncta",
+         "Total DAPI Int." = "dapi.sum.bg.sub.puncta") %>% 
+  pivot_longer(cols = 3:5) %>% 
+  mutate(value.ratio = value/ none,
+         value.sub = none - value) %>% 
+   filter(degron %in% c("cln2.3","mODC.2","stable.3","stable.2","cln2.4")) %>% 
+  # mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "GFP-CLN2",
+  #                           degron %in% c("mODC.2", "mODC")  ~ "GFP-mODC",
+  #                           degron %in% c("stable","stable.2","stable.3") ~ "yeGFP"),
+  #        degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","yeGFP"))) %>%
+  # mutate(degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","yeGFP"))) %>% 
+  ggplot(.,aes(y = name, x = value.sub))+
+  geom_col(width = 0.2)+
+  facet_wrap(~degron, scales = "free")+
+  theme(text = element_text(size = 8))+
+  # scale_x_log10()+
+  xlab(TeX("$Delta(r^{2}_{full} - r^{2}_{step})"))+
+  ylab("Regressor Dropped")+
+  theme_pubr()+
+  theme(text = element_text(size = 8))
+```
+
+
+#With the protein inhibitors
+```{r}
+#with 6 regressors
+stepR.prtInh.list <- stepR.fn(reg = regressors, 
+                              df = mlr.df, 
+                              prt.inh.trt = c("dmso1","dmso2","1uM","2.5uM","5uM","50uM"), 
+                              id.var = "treatment")
+fullR.prtInh.list <- fullMLR.fn(reg = regressors, 
+                              df = mlr.df, 
+                              prt.inh.trt = c("dmso1","dmso2","1uM","2.5uM","5uM","50uM"), 
+                              id.var = "treatment")
+
+#with just fluorecent proteins
+stepR.prtInh.fp.list <- stepR.fn(reg = regressors.fp, 
+                              df = mlr.df, 
+                              prt.inh.trt = c("dmso1","dmso2","1uM","2.5uM","5uM","50uM"), 
+                              id.var = "treatment")
+fullR.prtInh.fp.list <- fullMLR.fn(reg = regressors.fp, 
+                              df = mlr.df, 
+                              prt.inh.trt = c("dmso1","dmso2","1uM","2.5uM","5uM","50uM"), 
+                              id.var = "treatment")
+
+```
+
+plots
+```{r}
+#with 6 regressors
+bind_rows(fullR.prtInh.list$fullR.glance, stepR.prtInh.list$stepR.glance) %>%
+    mutate(adj.r.squared = round(adj.r.squared , digits = 4)) %>% 
+  select(treatment, r.squared, removed.col) %>% 
+  pivot_wider(values_from = r.squared, names_from = removed.col) %>% 
+  pivot_longer(cols = 3:8) %>% 
+  mutate(value.ratio = value/ none,
+         value.sub = none - value) %>% 
+  ggplot(.,aes(y = name, x = value.sub))+
+  geom_col()+
+  facet_wrap(~factor(treatment, levels = c("dmso1","dmso2","1uM","2.5uM","5uM","50uM")), scales = "free")+
+  theme(text = element_text(size = 8))+
+  # scale_x_log10()+
+  xlab(TeX("$Delta(r^{2}_{full} - r^{2}_{step})"))+
+  ylab("regressor dropped")
+
+#with 3 fluorescent proteins
+bind_rows(fullR.prtInh.fp.list$fullR.glance, stepR.prtInh.fp.list$stepR.glance) %>%
+    mutate(adj.r.squared = round(adj.r.squared , digits = 4)) %>% 
+  select(treatment, r.squared, removed.col) %>% 
+  pivot_wider(values_from = r.squared, names_from = removed.col) %>% 
+  pivot_longer(cols = 3:5) %>% 
+  mutate(value.ratio = value/ none,
+         value.sub = none - value) %>% 
+  ggplot(.,aes(y = name, x = value.sub))+
+  geom_col()+
+  facet_wrap(~factor(treatment, levels = c("dmso1","dmso2","1uM","2.5uM","5uM","50uM")), scales = "free")+
+  theme(text = element_text(size = 8))+
+  # scale_x_log10()+
+  xlab(TeX("$Delta(r^{2}_{full} - r^{2}_{step})"))+
+  ylab("regressor dropped")
+```
+
+#looked at the outliers
+```{r}
+install.packages("qpcR")
+library(qpcR)
+
+PRESS(fullMLR.fit)
+PRESS(stepR.fp.fit[[2]]$cln2.3)
+PRESS(stepR.fp.fit[[3]]$cln2.3)
+
+library(ggfortify)
+autoplot(fullMLR.fit$cln2.3)
+autoplot(stepR.fp.fit[[1]]$cln2.3)
+
+fullMLR.fit$cln2.3$model
+
+plot(stepR.fp.fit[[2]]$cln2.3)
+cooks.distance(fullMLR.fit$cln2.3) %>% broom::tidy() %>% arrange(desc(x))
+
+mlr.df %>% filter(degron == "cln2.3") %>% 
+  rownames_to_column() %>% 
+  filter(rowname == "916")
+
+lapply(fullMLR.fit, autoplot)
+
+lapply(fullMLR.fit, function(a){
+  cooks.distance(a) %>% 
+    broom::tidy() %>% 
+    arrange(desc(x))
+}) 
+
+```
+
+```{r}
+cooks.distance(fullMLR.fit$cln2.3) %>% broom::tidy() %>% arrange(desc(x))
+
+outliers.cln2.3 <- mlr.df %>% filter(degron == "cln2.3") %>% 
+  rownames_to_column() %>% 
+  filter(rowname %in% c( "178","564","761","916")) %>% pull(cell.id)
+```
+
+```{r}
+lapply(fullMLR.fit, summary)
+```
+
+
+#df to be used with step function
+```{r}
+temp.df.list <- mlr.df2 %>% 
+    filter(treatment == "none") %>%  
+  # mutate( dm = log10(dm)) %>% 
+  split(.$degron)
+```
+
+
+#using stepAIC from MASS
+```{r}
+library(MASS)
+
+full.stepAIC.mass <- lapply(temp.df.list, function(a){
+  n <- nrow(a)
+  lm.obj <- lm(t.half ~ ., data = a %>% 
+     dplyr::select(regressors,
+                   t.half,
+                   -dy, 
+                   -treatment))
+     
+ stepAIC(object = lm.obj, 
+     direction = "backward", 
+     trace = T)
+})
+
+full.stepAIC.mass %>% map(.,broom::tidy)
+
+```
+
+#step AIC with all the fp markers + cell shape 
+```{r}
+full.stepAIC <- lapply(temp.df.list, function(a){
+  n <- nrow(a)
+ step(lm(t.half ~ ., data = a %>% 
+     dplyr::select(regressors,
+                   t.half,
+                   -dy, 
+                   -treatment)), 
+     direction = "backward", 
+     trace = T,
+     # k = log(n),
+     k =2 ) #k = 2 when small dataset and k = log(n) where n = no. of observations for when the dataset is large
+})
+
+
+full.stepAIC %>% 
+  map(., broom::glance) %>% 
+  bind_rows(.id = "sample") 
+  # filter(sample %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3"))
+
+full.stepAIC %>% 
+  map(., broom::tidy) 
+  # bind_rows(.id = "sample") %>% 
+  # filter(sample %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3"), 
+         # p.value < 0.05) %>% 
+
+full.stepAIC %>% 
+  map(.,function(a){
+    a$anova 
+  }) %>% 
+  bind_rows(.,.id = "degron") %>% 
+  mutate(Step = as.character(Step), 
+         Step = ifelse(Step == "", "Full",Step)) %>% 
+  group_by(degron) %>% 
+  mutate(del.aic = AIC[1]-AIC) 
+
+
+full.stepAIC.fp %>% 
+  map(.,function(a){
+    a$anova 
+  }) %>% 
+  bind_rows(.,.id = "degron") %>% 
+  mutate(Step = as.character(Step), 
+         Step = ifelse(Step == "", "Full",Step)) %>% 
+  group_by(degron) %>% 
+  mutate(del.aic = AIC[1]-AIC) 
+
+```
+
+#Plot the aic difference at each step
+```{r}
+full.stepAIC %>% 
+  map(.,function(a){
+    a$anova 
+  }) %>% 
+  bind_rows(.,.id = "degron") %>% 
+  mutate(Step = as.character(Step), 
+         Step = ifelse(Step == "", "Full",Step)) %>% 
+  group_by(degron) %>% 
+  mutate(del.aic = AIC[1]-AIC) %>% 
+  select(degron, Step, del.aic) %>% 
+  split(.$degron) %>% 
+  map(.,function(a){
+    a[nrow(a),] %>% 
+      mutate(model = "reduced")
+  }) %>% 
+  bind_rows(.id = "degron") %>% 
+  mutate(degron = factor(degron, levels = c("GFP-mODC", "GFP-CLN2","yeGFP"))) %>% 
+  ggplot(.,aes(x = del.aic, y = degron))+
+  geom_col(width = 0.2)+
+  theme(text = element_text(size = 8))+
+  # scale_x_log10()+
+  xlab(TeX("$Delta(AIC_{full} - AIC_{step})"))+
+  ylab("Regressor Dropped")+
+  theme_pubr()+
+  theme(text = element_text(size = 8))
+
+```
+
+#step AIC with only the fluorescent markers 
+```{r}
+full.stepAIC.fp <- lapply(temp.df.list, function(a){
+  n <- nrow(a)
+ step(lm(t.half ~ ., data = a %>% 
+     dplyr::select(regressors.fp,
+                   t.half,
+                   -dy, 
+                   -treatment)), 
+     direction = "backward", 
+     trace = T,
+     k = 2)
+})
+
+#looking at which regressor contributes to the overall variability 
+full.stepAIC.fp %>% 
+  map(., broom::tidy) 
+  # filter(sample %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3")) %>% 
+  # split(.$sample)
+
+#model fit stats
+full.stepAIC.fp %>% 
+  map(., broom::glance) %>% 
+  bind_rows(.id = "sample")
+
+
+full.stepAIC.fp %>% 
+  map(.,function(a){
+    a$anova 
+  }) %>% 
+  bind_rows(.,.id = "degron") %>% 
+  mutate(Step = as.character(Step), 
+         Step = ifelse(Step == "", "Full",Step)) %>% 
+  group_by(degron) %>% 
+  mutate(del.aic = AIC-AIC[1]) 
+```
+
+Variance in t-half explained by each regressor
+using anova
+
+```{r}
+full.stepAIC.fp %>% 
+  map(., anova %>% as.data.frame) %>% 
+  bind_rows(.id = "sample") %>% 
+  rownames_to_column(var = "predictor") %>% 
+  # filter(sample %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3")) %>% 
+  group_by(sample) %>% 
+  mutate(var.exp = (value.Sum.Sq/sum(value.Sum.Sq))*100) %>% 
+  split(.$sample)
+
+var.explained <- full.stepAIC %>% 
+  map(., anova %>% as.data.frame) %>% 
+  bind_rows(.id = "sample") %>% 
+  rownames_to_column(var = "predictor") %>% 
+  # filter(sample %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3")) %>% 
+  group_by(sample) %>% 
+  mutate(var.exp = (value.Sum.Sq/sum(value.Sum.Sq))*100, 
+         predictor = str_split(predictor, pattern = "\\.\\.\\.", simplify = T)[,1], 
+         predictor = case_when(predictor == "gfp.mean.bg.af.sub.new" ~ "GFP" ,
+                               predictor == "area" ~ "Area",
+                               predictor == "rfp.mean.bg.sub.puncta" ~ "Pup1",
+                               predictor == "dapi.sum.bg.sub.puncta" ~ "DNA" ,
+                               predictor == "shape" ~ "Shape", 
+                               predictor == "dm" ~ "Rate of Maturation"
+                               , 
+                               TRUE~predictor)) %>% 
+  split(.$sample)
+
+var.explained
+```
+
+#plotting the variance explained 
+```{r}
+remain.reg <- data.frame(sample = c("yeGFP-CLN2","yeGFP-CLN2","yeGFP","yeGFP"), 
+                         predictor = c("Rate of Maturation", "Shape","Shape","Pup1"), 
+                         var.exp = rep(0,4),
+                         value.Pr..F. = rep(0,4))
+var.exp.plt <- var.explained %>% 
+  bind_rows() %>% 
+  bind_rows(.,remain.reg) %>% 
+  filter(predictor != "Residuals") %>% 
+  dplyr::select(sample, predictor, var.exp,value.Pr..F.) %>% 
+  mutate(sample = factor(sample , levels = c("yeGFP-mODC","yeGFP-CLN2","yeGFP"))) %>% 
+  # mutate(var.pal = ifelse(value.Pr..F. < 0.05, "<0.05",">0.05")) %>% 
+  arrange(sample) %>% 
+  ggplot(.,aes(x = predictor, y = var.exp ))+
+  geom_col(width = 0.5)+
+  facet_wrap(~sample, scales = "free")+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 5))+
+  theme_pubr()+
+  theme(text = element_text(size = 8),
+        axis.line = element_line(size = 0.1),
+        strip.background = element_blank())+
+  ylim(0,20)+
+  ylab("Variance explained (%)")+
+  xlab("Cellular features")
+var.exp.plt
+```
+
+#stepAIC with proteasome inhibition experiments
+With all fp regressors
+```{r}
+temp.df.list.dmso <- mlr.df %>% 
+    filter(treatment != "none") %>%  
+  split(.$treatment)
+
+full.stepAIC.fp.dmso <- lapply(temp.df.list.dmso, function(a){
+ step(lm(t.half ~ ., data = a %>% 
+     dplyr::select(regressors.fp,
+                   t.half,
+                   -dy, 
+                   -treatment)), 
+     direction = "backward", trace = T)
+})
+
+lapply(full.stepAIC.fp.dmso, summary) %>% map(., broom::tidy) %>% 
+  bind_rows(.id = "sample") %>% 
+  split(.$sample)
+
+lapply(full.stepAIC.fp.dmso, summary) %>% map(., broom::glance) %>% 
+  bind_rows(.id = "sample") %>% 
+  split(.$sample)
+```
+
+with fp regressors + celluar shape 
+```{r}
+temp.df.list.dmso <- mlr.df %>% 
+    filter(treatment != "none") %>%  
+  split(.$treatment)
+
+full.stepAIC.dmso <- lapply(temp.df.list.dmso, function(a){
+ step(lm(t.half ~ ., data = a %>% 
+     dplyr::select(regressors.fp,
+                   t.half,
+                   -dy, 
+                   -treatment)), 
+     direction = "backward", trace = T)
+})
+
+lapply(full.stepAIC.dmso, summary) %>% map(., broom::tidy) %>% 
+  bind_rows(.id = "sample") %>% 
+  split(.$sample)
+
+lapply(full.stepAIC.dmso, summary) %>% map(., broom::glance) %>% 
+  bind_rows(.id = "sample") %>% 
+  split(.$sample) 
+
+```
+
+Variance in t-half explained by each regressor
+```{r}
+full.stepAIC.dmso %>% 
+  map(., anova %>% as.data.frame) %>% 
+  bind_rows(.id = "sample") %>% 
+  rownames_to_column(var = "predictor") %>% 
+  # filter(sample %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3")) %>% 
+  group_by(sample) %>% 
+  mutate(var.exp = (value.Sum.Sq/sum(value.Sum.Sq))*100) %>% 
+  split(.$sample)
+
+full.stepAIC.fp.dmso %>% 
+  map(., anova %>% as.data.frame) %>% 
+  bind_rows(.id = "sample") %>% 
+  rownames_to_column(var = "predictor") %>% 
+  # filter(sample %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3")) %>% 
+  group_by(sample) %>% 
+  mutate(var.exp = (value.Sum.Sq/sum(value.Sum.Sq))*100) %>% 
+  split(.$sample)
+
+```
+
+
+
+#using regsubsets
+```{r}
+library(leaps)
+```
+
+```{r}
+full.regSub.fp <- lapply(temp.df.list, function(a){
+  n <- nrow(a)
+ regsubsets(t.half ~ ., data = a %>% 
+     dplyr::select(regressors.fp,
+                   t.half,
+                   -dy, 
+                   -treatment), 
+     nvmax = NULL)
+})
+
+regSub.summary <- full.regSub.fp %>% map(.,summary)
+
+lapply(regSub.summary, function(a){
+  data.frame(model = a$outmat, 
+             cp = a$cp,
+             bic = a$bic)
+}) %>% bind_rows(.id = "degron") %>% 
+  group_by(degron) %>% 
+  arrange(degron, cp)
+```
+
+```{r}
+full.regSub <- lapply(temp.df.list, function(a){
+  n <- nrow(a)
+  
+  
+ regsubsets(t.half ~ ., data = a %>% 
+     dplyr::select(regressors,
+                   t.half,
+                   -dy, 
+                   -treatment), 
+     nvmax = NULL)
+})
+
+regSub.summary2 <- full.regSub %>% map(.,summary)
+
+lapply(regSub.summary2, function(a){
+  data.frame(model = a$outmat, 
+             cp = a$cp,
+             bic = a$bic)
+}) %>% bind_rows(.id = "degron") %>% 
+  group_by(degron) %>% 
+  arrange(degron, bic
+          ) %>% split(.$degron)
+```
+
+
+
+#plots: 
+```{r}
+gfp.6.cor.plt <- mlr.df %>%
+  mutate(dm = log10(dm)) %>% 
+  filter(degron %in% c("mODC.2", "cln2.3", "cln2.4", "stable.2", "stable.3")) %>%
+  dplyr::select(t.half,
+         regressors,
+         degron) %>%
+  rename(
+    "GFP" = "gfp.mean.bg.af.sub.new",
+    "Pup1-tDimer" = "rfp.mean.bg.sub.puncta",
+    "DNA" = "dapi.sum.bg.sub.puncta",
+    "Area" = "area"
+  ) %>%
+  pivot_longer(cols = 2:7) %>%
+  mutate(degron = case_when(
+      degron %in% c("cln2.3", "cln2.2", "cln2", "cln2.4") ~ "yeGFP-CLN2",
+      degron %in% c("mODC.2", "mODC")  ~ "yeGFP-mODC",
+      degron %in% c("stable", "stable.2", "stable.3") ~ "yeGFP"
+    ),
+    degron = factor(degron , levels = c("yeGFP-mODC", "yeGFP-CLN2", "yeGFP"))
+  ) %>%
+  filter(!(name %in% c("shape","dm"))) %>% 
+  ggplot(., aes(x = value, y = t.half)) +
+      ggpointdensity::geom_pointdensity(size = 0.2, guides = F) +
+      stat_cor(size = 2) +
+      geom_smooth(method = "lm", se = FALSE, color = "red4", size = 0.5)+
+      facet_wrap(degron ~ name, scales = "free", ncol = 4) +
+      theme_bw() +
+      labs(x = NULL) +
+      theme(text = element_text(size = 8),
+            axis.text.x = element_text(angle = 30),
+            legend.key.size = unit(2,"mm"), 
+            legend.position = "none", 
+            axis.line = element_line(size = 0.1))+
+  ylab("Half-life [min.]")+
+  xlab("A.U")
+  
+gfp.6.cor.plt
+```
+
+```{r}
+gfp.3.cor.plt <- mlr.df %>%
+  filter(degron %in% c("mODC.2", "cln2.3", "cln2.4", "stable.2", "stable.3")) %>%
+  dplyr::select(t.half,
+         regressors.fp,
+         degron) %>%
+  rename(
+    "GFP intensity" = "gfp.mean.bg.af.sub.new",
+    "Pup1-tDimer" = "rfp.mean.bg.sub.puncta",
+    "Total DNA Int." = "dapi.sum.bg.sub.puncta"
+  ) %>%
+  pivot_longer(cols = 2:4) %>%
+  mutate(
+    degron = case_when(
+      degron %in% c("cln2.3", "cln2.4") ~ "yeGFP-CLN2",
+      degron %in% c("mODC.2")  ~ "yeGFP-mODC",
+      degron %in% c("stable.2", "stable.3") ~ "yeGFP"
+    ),
+    degron = factor(degron , levels = c("yeGFP-mODC", "yeGFP-CLN2", "yeGFP"))
+  ) %>%
+  ggplot(., aes(x = value, y = t.half)) +
+  ggpointdensity::geom_pointdensity(size = 0.2, guides = F) +
+  stat_cor(size = 2) +
+  geom_smooth(method = "lm", se = FALSE, color = "red4", size = 0.5)+
+      facet_wrap(degron ~ name, scales = "free") +
+      theme_bw() +
+      labs(x = NULL) +
+      theme(text = element_text(size = 8),
+            axis.text.x = element_text(angle = 30),
+            legend.position = "none",
+            panel.grid.minor = element_blank())+
+  ylab("Half-Life [min.]")+
+  xlab("Intensity [A.U.]")
+
+gfp.3.cor.plt
+```
+GFP intensity vs t-half cor plot 
+```{r}
+gfp.Int.cor.plt <- mlr.df %>%
+  filter(degron %in% c("mODC.2", "cln2.3", "cln2.4", "stable.2", "stable.3")) %>%
+  dplyr::select(t.half,
+         gfp.mean.bg.af.sub.new,
+         degron) %>%
+  mutate(
+    degron = case_when(
+      degron %in% c("cln2.3", "cln2.4") ~ "yeGFP-CLN2",
+      degron %in% c("mODC.2")  ~ "yeGFP-mODC",
+      degron %in% c("stable.2", "stable.3") ~ "yeGFP"
+    ),
+    degron = factor(degron , levels = c("yeGFP-mODC", "yeGFP-CLN2", "yeGFP"))
+  ) %>%
+  ggplot(., aes(x = gfp.mean.bg.af.sub.new, y = t.half)) +
+  ggpointdensity::geom_pointdensity(size = 0.2, guides = F) +
+  stat_cor(size = 6) +
+  geom_smooth(method = "lm", se = FALSE, color = "red4", size = 0.5)+
+      facet_wrap(~degron , scales = "free") +
+      theme_bw() +
+      labs(x = NULL) +
+      theme(text = element_text(size = 12),
+            axis.text.x = element_text(angle = 30),
+            legend.position = "none",
+            panel.grid.minor = element_blank())+
+  ylab("Half-Life [min.]")+
+  xlab("GFP Intensity [A.U.]")
+
+gfp.Int.cor.plt
+```
+
+#patchwork for 3 cellular features and t-half
+```{r fig.height= 4, fig.width= 5 }
+cellular.halfLife.plt <- (deltaR2.plt.all/gfp.3.cor.plt)+
+  plot_layout(guides = "collect", heights = c(0.3,0.7))+
+  plot_annotation(tag_levels = "A")
+
+cellular.halfLife.plt
+```
+
+```{r}
+ggsave(plot = cellular.halfLife.plt, filename = "cellular_halfLife_cor.png", path = "~/plots/paper1/figures/fig_2/", width = 6.5, height = 8)
+ggsave(plot = cellular.halfLife.plt, filename = "cellular_halfLife_cor.pdf", path = "~/plots/paper1/figures/fig_2/", width = 6.5, height = 8)
+```
+
+#patchwork for GFP intensity and t-half 
+```{r  }
+gfpInt.halfLife.plt <- (deltaR2.plt.all/gfp.Int.cor.plt)+
+  plot_layout(guides = "collect")+
+  plot_annotation(tag_levels = "A")
+
+gfpInt.halfLife.plt
+```
+```{r}
+ggsave(plot = gfpInt.halfLife.plt, filename = "gfpInt_halfLife_cor.png", path = "~/plots/paper1/figures/fig_2/", width = 5.5, height = 6)
+ggsave(plot = gfpInt.halfLife.plt, filename = "gfpInt_halfLife_cor.pdf", path = "~/plots/paper1/figures/fig_2/", width = 5.5, height = 6)
+```
+
+
+
+#for GRC poster
+```{r}
+ggsave(plot = var.exp.plt, filename = "var_explained.pdf",path = "~/plots/paper1/figures/fig_2/", width =12, height = 3)
+ggsave(plot =gfp.Int.cor.plt , filename = "gfpInt_cor.pdf",path = "~/plots/paper1/figures/fig_2/", width =12, height = 3)
+```
+
+with prottein inhibition
+```{r}
+ mlr.df %>%
+  mutate(dm = log10(dm)) %>% 
+  filter(degron %in% c ("mODC") ) %>%
+  # filter(!(treatment %in% c("none", "dmso1","50uM")), 
+         # ifelse(treatment == "5uM", t.half < 138.6294, t.half == t.half)) %>%  
+  dplyr::select(t.half,
+         regressors,
+         degron,
+         treatment) %>%
+  rename(
+    "GFP" = "gfp.mean.bg.af.sub.new",
+    "Pup1-tDimer" = "rfp.mean.bg.sub.puncta",
+    "DNA" = "dapi.sum.bg.sub.puncta",
+    "Area" = "area"
+  ) %>%
+  pivot_longer(cols = 2:7) %>%
+  mutate(degron = case_when(
+    degron %in% c("mODC")  ~ "yeGFP-mODC"),
+    treatment = factor(treatment, levels = c("none","dmso1","dmso2","1uM","2.5uM","5uM","50uM"))) %>%
+  filter(!(name %in% c("shape","dm"))) %>% 
+  ggplot(., aes(x = value, y = t.half)) +
+      ggpointdensity::geom_pointdensity(size = 0.2, guides = F) +
+      stat_cor(size = 2) +
+      geom_smooth(method = "lm", se = FALSE, color = "red4", size = 0.5)+
+      facet_grid(treatment ~ name, scales = "free") +
+      theme_bw() +
+      labs(x = NULL) +
+      theme(text = element_text(size = 8),
+            axis.text.x = element_text(angle = 30),
+            legend.key.size = unit(2,"mm"), 
+            legend.position = "none")+
+  ylab("Half-Life [min.]")+
+  xlab("A.U")
+
+```
+
+```{r}
+mlr.df %>%
+  mutate(dm = log10(dm)) %>% 
+  filter(degron %in% c ("mODC") ) %>%
+  filter(!(treatment %in% c("none", "dmso1","50uM")), 
+         ifelse(treatment == "5uM", t.half < 138.6294, t.half == t.half)) %>% 
+  dplyr::select(t.half,
+         regressors,
+         degron,
+         treatment) %>% 
+  ggplot(.,aes(x = area, y = rfp.mean.bg.sub.puncta))+
+  geom_point()+
+  geom_smooth(method = "lm", se = F)+
+  facet_wrap(~treatment)+
+  stat_cor()
+```
+
+
+```{r}
+mlr.df %>% 
+  filter(treatment == "none") %>% 
+  ggplot(.,aes(x = dapi.sum.bg.sub.puncta))+
+  geom_histogram()+
+  facet_wrap(~degron, scales = "free")
+```
+#ggpairs 
+
+```{r}
+#to be used with ggpairs
+my_fn <- function(data, mapping, ...){
+  p <- ggplot(data = data, mapping = mapping) + 
+    ggpointdensity::geom_pointdensity(size = 0.1)+
+    # geom_point(size = 0.1, alpha = 0.1) + 
+    geom_smooth(method="lm",  color="red4", se = FALSE, lwd = 0.5)+
+    theme(legend.position = "none")
+  p
+}
+
+gfp.area.cor.ggPair <- mlr.df %>%
+  filter(degron %in% c("mODC.2", "cln2.3", "cln2.4", "stable.2", "stable.3")) %>%
+  dplyr::select(t.half,
+         regressors,
+         degron) %>%
+  rename(
+    "GFP" = "gfp.mean.bg.af.sub.new",
+    "Pup1-tDimer" = "rfp.mean.bg.sub.puncta",
+    "DNA" = "dapi.sum.bg.sub.puncta",
+    "Area" = "area"
+  ) %>%
+  dplyr::select(Area, DNA, `Pup1-tDimer`,GFP,degron ) %>% 
+  mutate(
+    degron = case_when(
+      degron %in% c("cln2.3", "cln2.4") ~ "yeGFP-CLN2",
+      degron %in% c("mODC.2")  ~ "yeGFP-mODC",
+      degron %in% c("stable.2", "stable.3") ~ "yeGFP"
+    ),
+    degron = factor(degron , levels = c("yeGFP-mODC", "yeGFP-CLN2", "yeGFP"))
+  ) %>%
+  split(.$degron) %>% 
+  map(.,function(a){
+    a %>% 
+      ggpairs(.,
+          # legend = 5,
+          columns = 1:4,
+          # mapping = ggplot2::aes(color = Replicate),
+          lower = list(continuous = my_fn,
+                      discrete = "blank", 
+                      combo="blank"), 
+          # upper = "blank",
+          # diag = NULL,
+           diag = list(discrete="barDiag",
+                      continuous = wrap("densityDiag", alpha=0.5 )),
+          upper = list(discrete= wrap("barDiag" , outlier.size = 0.5),
+                       combo = wrap("box_no_facet", outlier.size = 0.5),
+                       continuous = wrap("cor", display_grid = FALSE, size = 2.5 , method = "pearson", color = "red4")),
+          labeller = label_wrap_gen(width = 2, multi_line = TRUE))+
+  theme_bw()+
+  theme(text = element_text(size = 8),
+        legend.position = "none",
+        panel.grid.major = element_blank(),
+        axis.text.x = element_text(angle = 30, hjust = 1))+
+      labs(title = a$degron[1])
+  })
+  
+gfp.area.cor.ggPair
+```
+```{r}
+ggsave(plot = gfp.area.cor.ggPair$`yeGFP-mODC`, filename = "gfp_mODC_4Cor_ggP.png", path = "~/plots/paper1/figures/fig_2/", width = 4, height = 3.5)
+
+ggsave(plot = gfp.area.cor.ggPair$`yeGFP-mODC`, filename = "gfp_mODC_4Cor_ggP.pdf", path = "~/plots/paper1/figures/fig_2/", width = 4, height = 3.5)
+
+ggsave(plot = gfp.area.cor.ggPair$`yeGFP-CLN2`, filename = "gfp_cln2_4Cor_ggP.png", path = "~/plots/paper1/figures/fig_2/", width = 4, height = 3.5)
+
+ggsave(plot = gfp.area.cor.ggPair$`yeGFP-CLN2`, filename = "gfp_cln2_4Cor_ggP.pdf", path = "~/plots/paper1/figures/fig_2/", width = 4, height = 3.5)
+
+ggsave(plot = gfp.area.cor.ggPair$`yeGFP`, filename = "gfp_4Cor_ggP.png", path = "~/plots/paper1/figures/fig_2/", width = 4, height = 3.5)
+
+ggsave(plot = gfp.area.cor.ggPair$`yeGFP`, filename = "gfp_4Cor_ggP.pdf", path = "~/plots/paper1/figures/fig_2/", width = 4, height = 3.5)
+```
+
+```{r}
+test.ggP <- (wrap_elements(ggmatrix_gtable(gfp.area.cor.ggPair$`yeGFP-mODC`))|wrap_elements(ggmatrix_gtable(gfp.area.cor.ggPair$`yeGFP-CLN2`))| wrap_elements(ggmatrix_gtable(gfp.area.cor.ggPair$yeGFP)))+
+ plot_annotation(tag_levels = "A")
+```
+
+```{r}
+ggsave(plot = test.ggP, filename = "test_ggP.pdf", path = "~/plots/paper1/figures/fig_2/", width = 6.5, height = 3)
+```
+
+#area vs pup1 vs dna vs gfp
+```{r}
+df_corSup_fig <- mlr.df %>%
+  filter(degron %in% c("mODC.2", "cln2.3", "cln2.4", "stable.2", "stable.3")) %>%
+  dplyr::select(t.half,
+         regressors,
+         degron) %>%
+  rename(
+    "GFP" = "gfp.mean.bg.af.sub.new",
+    "Pup1-tDimer" = "rfp.mean.bg.sub.puncta",
+    "DNA" = "dapi.sum.bg.sub.puncta",
+    "Area" = "area"
+  ) %>%
+  dplyr::select(Area, DNA, `Pup1-tDimer`,GFP,degron ) %>% 
+  mutate(
+    degron = case_when(
+      degron %in% c("cln2.3", "cln2.4") ~ "yeGFP-CLN2",
+      degron %in% c("mODC.2")  ~ "yeGFP-mODC",
+      degron %in% c("stable.2", "stable.3") ~ "yeGFP"
+    ),
+    degron = factor(degron , levels = c("yeGFP-mODC", "yeGFP-CLN2", "yeGFP"))
+  ) 
+```
+
+```{r}
+
+area.pup1 <- df_corSup_fig %>% 
+  filter(degron == "yeGFP-mODC") %>% 
+  ggplot(.,aes(x = Area, y = `Pup1-tDimer`))+
+  ggpointdensity::geom_pointdensity(size = 0.2, guides = F) +
+      stat_cor(size = 3) +
+      geom_smooth(method = "lm", se = FALSE, color = "red4", size = 0.5)+
+      theme_bw() +
+      labs(x = NULL) +
+      theme(text = element_text(size = 8),
+            axis.text.x = element_text(angle = 30),
+            legend.key.size = unit(2,"mm"), 
+            legend.position = "none", 
+            axis.line = element_line(size = 0.1))+
+  ylab("Pup1-tDimer [A.U]")+
+  xlab("Area [A.U]")
+
+dna.pup1 <- df_corSup_fig %>% 
+  filter(degron == "yeGFP-mODC") %>% 
+  ggplot(.,aes(x = DNA, y = `Pup1-tDimer`))+
+  ggpointdensity::geom_pointdensity(size = 0.2, guides = F) +
+      stat_cor(size = 3) +
+      geom_smooth(method = "lm", se = FALSE, color = "red4", size = 0.5)+
+      theme_bw() +
+      labs(x = NULL) +
+      theme(text = element_text(size = 8),
+            axis.text.x = element_text(angle = 30),
+            legend.key.size = unit(2,"mm"), 
+            legend.position = "none", 
+            axis.line = element_line(size = 0.1))+
+  ylab("Pup1-tDimer [A.U]")+
+  xlab("DNA [A.U]")
+
+dna.area <- df_corSup_fig %>%
+  filter(degron == "yeGFP-mODC") %>% 
+  ggplot(.,aes(x = DNA, y = Area))+
+  ggpointdensity::geom_pointdensity(size = 0.2, guides = F) +
+      stat_cor(size = 3) +
+      geom_smooth(method = "lm", se = FALSE, color = "red4", size = 0.5)+
+      theme_bw() +
+      labs(x = NULL) +
+      theme(text = element_text(size = 8),
+            axis.text.x = element_text(angle = 30),
+            legend.key.size = unit(2,"mm"), 
+            legend.position = "none", 
+            axis.line = element_line(size = 0.1))+
+  ylab("Area [A.U]")+
+  xlab("DNA [A.U]")
+```
+
+```{r}
+gfpInt.cor.plt <- df_corSup_fig %>% 
+  pivot_longer(cols = 1:3) %>% 
+  # filter(degron == "yeGFP-mODC") %>% 
+  ggplot(.,aes(x = value, y = GFP))+
+  ggpointdensity::geom_pointdensity(size = 0.2, guides = F) +
+      stat_cor(size = 3) +
+      geom_smooth(method = "lm", se = FALSE, color = "red4", size = 0.5)+
+  facet_wrap(degron~name, scales = "free")+
+      theme_bw() +
+      labs(x = NULL) +
+      theme(text = element_text(size = 8),
+            axis.text.x = element_text(angle = 30),
+            legend.key.size = unit(2,"mm"), 
+            legend.position = "none", 
+            axis.line = element_line(size = 0.1))+
+  xlab("A.U")
+```
+
+```{r}
+test_cor <- ((area.pup1|dna.pup1|dna.area)/gfpInt.cor.plt)+
+  plot_layout(heights = c(0.2, 0.8))+
+  plot_annotation(tag_levels = "A")
+
+ggsave(plot = test_cor, filename = "area.pup1.dna.gfp_cor.pdf", path = "~/plots/paper1/figures/fig_2/", width = 6.5, height = 7)
+```
+
+
+#Partial correlations
+ppcor
+```{r}
+#partial correlations
+ppCor.list <- mlr.df2 %>% 
+  filter(treatment == "none") %>% split(.$degron) %>% 
+  map(.,function(a){
+    a <- a %>% 
+      dplyr::select(t.half, area,  dapi.sum.bg.sub.puncta, rfp.mean.bg.sub.puncta, gfp.mean.bg.af.sub.new) %>% 
+      na.omit()
+    ppcor::pcor(a)
+  })
+
+#correlations
+cor.all <- mlr.df2 %>% 
+  filter(treatment == "none") %>%  
+  split(.$degron) %>% 
+  map(.,function(a){
+     a <- a %>% 
+      dplyr::select(t.half, area, dapi.sum.bg.sub.puncta,rfp.mean.bg.sub.puncta, gfp.mean.bg.af.sub.new) %>% 
+      na.omit()
+     cor(a)
+  })
+
+```
+
+```{r}
+ppCor.df <- ppCor.list %>% 
+  map(.,function(a){
+    a$estimate %>% 
+      as.data.frame() %>% 
+      rownames_to_column(var = "regressor") %>% 
+      dplyr::select(t.half, regressor) %>% 
+      left_join(.,a$p.value%>% 
+                  as.data.frame() %>% 
+                  rownames_to_column(var = "regressor") %>% 
+                  rename("p.value" = "t.half") %>% 
+      dplyr::select(p.value, regressor), by = "regressor")
+  }) %>% 
+  bind_rows(.id = "degron")
+
+single.core.df <- cor.all %>% 
+  map(.,function(a){
+    a%>% 
+      as.data.frame() %>% 
+      rownames_to_column(var = "regressor") %>% 
+      dplyr::select(t.half, regressor)
+  }) %>% 
+  bind_rows(.id = "degron") %>% 
+  rename("single.core"="t.half")
+
+```
+
+```{r}
+library(gtools)
+```
+
+```{r}
+ppCoor.fig <- ppCor.df %>% 
+  left_join(.,single.core.df, by = c("degron","regressor")) %>% 
+  rename("Partial-Pariwise"="t.half",
+         "Standard-Pariwise" = "single.core") %>% 
+  pivot_longer(cols = c("Partial-Pariwise","Standard-Pariwise")) %>% 
+   mutate(regressor = case_when(regressor == "gfp.mean.bg.af.sub.new" ~ "GFP" ,
+                               regressor == "area" ~ "Area",
+                               regressor == "rfp.mean.bg.sub.puncta" ~ "Pup1",
+                               regressor == "dapi.sum.bg.sub.puncta" ~ "DNA" ,
+                               regressor == "t.half" ~ "half-life"), 
+          degron = factor(degron, levels = c("yeGFP-mODC","yeGFP-CLN2","yeGFP")), 
+          name = factor(name , levels = c("Standard-Pariwise", "Partial-Pariwise")), 
+          sig = stars.pval(p.value), 
+          sig = ifelse(sig == " ", "NS", sig)) %>% 
+  # filter(p.value < 0.05) %>% 
+  filter(regressor != "half-life") %>% 
+  ggplot(.,aes(x = regressor , y = value, fill = name))+
+  geom_col(width = 0.5, position = "dodge")+
+  facet_wrap(~degron)+
+  geom_hline(yintercept = 0, size = 0.1)+
+  scale_y_continuous(breaks = seq(-0.5,0.5, by = 0.1))+
+  theme_pubr()+
+  theme(text = element_text(size = 8),
+            legend.key.size = unit(4,"mm"),
+        legend.position = "top", 
+        axis.line = element_line(size = 0.1),
+        strip.background = element_blank())+
+  scale_fill_manual(values = c("lightsteelblue4" ," steelblue4"), name = NULL)+
+  ylab("Correlation with Half-life ")+
+  xlab("Cellular features")
+
+ppCoor.fig
+```
+#patchwork for 4 cellular features (area, gfp, dapi, pup1) and t-half 
+
+```{r fig.width= 5, fig.height= 6}
+gfp.4cor.hf.ppCor.plt <- (gfp.6.cor.plt/var.exp.plt/ppCoor.fig)+
+  plot_layout( heights = c(0.6,0.2, 0.2))+
+  plot_annotation(tag_levels = "A")
+
+gfp.4cor.hf.ppCor.plt
+```
+
+```{r}
+ggsave(plot = gfp.4cor.hf.ppCor.plt, filename = "gfp_4cor_halfLife_ppcor.png", path = "~/plots/paper1/figures/fig_2/", width = 7, height = 9)
+
+ggsave(plot = gfp.4cor.hf.ppCor.plt, filename = "gfp_4cor_halfLife_ppcor.pdf", path = "~/plots/paper1/figures/fig_2/", width = 7, height = 9)
+```
+
+#with protein inhibion
+```{r}
+ppCor.PrtIn.list <- mlr.df %>% 
+    filter(treatment != "none") %>%  
+  filter(ifelse(treatment == "5uM", t.half < 138.6294, t.half == t.half)) %>% 
+  split(.$treatment) %>% 
+  map(.,function(a){
+    a <- a %>% 
+      dplyr::select(t.half, area, dapi.sum.bg.sub.puncta, rfp.mean.bg.sub.puncta, gfp.mean.bg.af.sub.new) %>%
+      na.omit()
+    ppcor::pcor(a)
+  })
+
+cor.PrtIn.all <- mlr.df %>% 
+    filter(treatment != "none") %>%  
+  filter(ifelse(treatment == "5uM", t.half < 138.6294, t.half == t.half)) %>% 
+  split(.$treatment) %>% 
+  map(.,function(a){
+    a <- a %>% 
+      dplyr::select(t.half, area, dapi.sum.bg.sub.puncta, rfp.mean.bg.sub.puncta, gfp.mean.bg.af.sub.new) %>% 
+      na.omit()
+    cor(a)
+  })
+
+```
+
+```{r}
+ppCor.PrtIn.df <- ppCor.PrtIn.list %>% 
+  map(.,function(a){
+    a$estimate %>% 
+      as.data.frame() %>% 
+      rownames_to_column(var = "regressor") %>% 
+      dplyr::select(t.half, regressor) %>% 
+      left_join(.,a$p.value%>% 
+                  as.data.frame() %>% 
+                  rownames_to_column(var = "regressor") %>% 
+                  rename("p.value" = "t.half") %>% 
+      dplyr::select(p.value, regressor), by = "regressor")
+  }) %>% 
+  bind_rows(.id = "treatment")
+
+single.core.Prtn.df <- cor.PrtIn.all %>% 
+  map(.,function(a){
+    a%>% 
+      as.data.frame() %>% 
+      rownames_to_column(var = "regressor") %>% 
+      dplyr::select(t.half, regressor)
+  }) %>% 
+  bind_rows(.id = "treatment") %>% 
+  rename("single.core"="t.half")
+```
+correlation of pup1 with mODC with treated with proteasome inhibitors
+```{r}
+ppcor.fig.df <- ppCor.PrtIn.df %>% 
+  left_join(.,single.core.Prtn.df, by = c("treatment","regressor")) %>% 
+  filter(!(treatment %in% c("dmso1","50uM"))) %>% 
+  rename("Partial-Pariwise"="t.half",
+         "Standard-Pariwise" = "single.core") %>% 
+  pivot_longer(cols = c("Partial-Pariwise","Standard-Pariwise")) %>% 
+   mutate(regressor = case_when(regressor == "gfp.mean.bg.af.sub.new" ~ "GFP" ,
+                               regressor == "area" ~ "Area",
+                               regressor == "rfp.mean.bg.sub.puncta" ~ "Pup1",
+                               regressor == "dapi.sum.bg.sub.puncta" ~ "DNA" ,
+                               regressor == "t.half" ~ "half-life", 
+                               TRUE ~ regressor), 
+          treatment = factor(treatment, levels = c("dmso1","50uM","dmso2","1uM","2.5uM","5uM")), 
+          name = factor(name , levels = c("Standard-Pariwise", "Partial-Pariwise")), 
+          sig = stars.pval(p.value), 
+          sig = ifelse(sig == "\ ", "N.S", sig))
+          # new.value = ifelse((name == "Partial-Pariwise" & p.value > 0.05), 0, value)) %>% 
+  # filter(p.value < 0.05) %>% 
+ppcor.fig.df %>% 
+  filter(!(regressor %in% c("half-life", "shape")), 
+         regressor == "Pup1", 
+         treatment %in% c("dmso2","1uM","2.5uM","5uM")) %>% 
+  ggplot(.,aes(x = treatment , y =value, fill = name))+
+  geom_col(width = 0.5, position = "dodge")+
+  geom_text(data = ppcor.fig.df %>% 
+              filter(!(regressor %in% c("half-life", "shape")), 
+         regressor == "Pup1", 
+         treatment %in% c("dmso2","1uM","2.5uM","5uM")) , 
+         aes(label = sig), nudge_x = -0.1)+
+  # facet_wrap(~treatment, nrow = 1)+
+  scale_y_continuous(breaks = seq(-0.5,0.5, by = 0.1))+
+  theme_pubr()+
+  theme(text = element_text(size = 8),
+            legend.key.size = unit(4,"mm"),
+        legend.position = "top")+
+  scale_fill_manual(values = c("lightsteelblue4" ," steelblue4"), name = NULL)+
+  geom_hline(yintercept = 0)+
+  ylab("Correlation of Pup1 with Half-life ")+
+  xlab("Protein inhibitor treatment (MG132)")
+```
+
+#when you normalize pup1 with the area
+```{r}
+mlr.df %>%
+  mutate(dm = log10(dm)) %>% 
+  filter(degron %in% c("mODC.2", "cln2.3", "cln2.4", "stable.2", "stable.3")) %>%
+  dplyr::select(t.half,
+         regressors,
+         degron) %>%
+  rename(
+    "GFP" = "gfp.mean.bg.af.sub.new",
+    "Pup1-tDimer" = "rfp.mean.bg.sub.puncta",
+    "DNA" = "dapi.sum.bg.sub.puncta",
+    "Area" = "area"
+  ) %>%
+  mutate(norm.pup1 = `Pup1-tDimer`/Area) %>% 
+  pivot_longer(cols = c(2:7,9)) %>%
+  mutate(degron = case_when(
+      degron %in% c("cln2.3", "cln2.2", "cln2", "cln2.4") ~ "yeGFP-CLN2",
+      degron %in% c("mODC.2", "mODC")  ~ "yeGFP-mODC",
+      degron %in% c("stable", "stable.2", "stable.3") ~ "yeGFP"
+    ),
+    degron = factor(degron , levels = c("yeGFP-mODC", "yeGFP-CLN2", "yeGFP"))
+  ) %>%
+  filter(!(name %in% c("shape","dm"))) %>% 
+  ggplot(., aes(x = value, y = t.half)) +
+      ggpointdensity::geom_pointdensity(size = 0.2, guides = F) +
+      stat_cor(size = 2) +
+      geom_smooth(method = "lm", se = FALSE, color = "red4", size = 0.5)+
+      facet_wrap(degron ~ name, scales = "free", ncol = 4) +
+      theme_bw() +
+      labs(x = NULL) +
+      theme(text = element_text(size = 8),
+            axis.text.x = element_text(angle = 30),
+            legend.key.size = unit(2,"mm"), 
+            legend.position = "none")+
+  ylab("Half-Life [min.]")+
+  xlab("A.U")
+```
+

@@ -1,0 +1,828 @@
+---
+title: "Correlations"
+output: html_notebook
+---
+```{r}
+aic.df <- read_csv("~/plots/all_data/aic.csv")
+```
+
+#add the replicate info 
+```{r}
+
+aic.df <- aic.df %>% 
+  mutate(exp.field = paste0(str_split(cell.id, "_", simplify = T)[,2],"_",
+                            str_split(cell.id, "_", simplify = T)[,3]),
+    colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8" , "20min_s9") ~ "Replicate 3"))
+
+aic.df <- aic.df %>% 
+  mutate(colony = ifelse(degron == "stable" & red == "pup1-rfp", 
+                         case_when(exp.field %in% c("20min_s4", "20min_s5") ~ "Replicate 1",
+                                   exp.field %in% c("20min_s6", "20min_s7") ~ "Replicate 2",
+                                   exp.field %in% c("20min_s8", "20min_s9") ~ "Replicate 3"), colony)) 
+  # filter(value < 0.05)
+  
+```
+
+Cellular attributes
+```{r}
+pup1.cell.attr <- read_csv("~/plots/all_data/all_pup1_cell_attr.csv")
+```
+
+#pup1-RFP background
+```{r}
+pup1.cell.attr <- pup1.cell.attr %>% 
+  mutate(exp.field = paste0(str_split(cell.id, "_", simplify = T)[,2],"_",
+                            str_split(cell.id, "_", simplify = T)[,3]),
+    colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8" , "20min_s9") ~ "Replicate 3"))
+
+pup1.cell.attr <- pup1.cell.attr %>% 
+  mutate(colony = ifelse(degron == "stable" & red == "pup1-rfp", 
+                         case_when(exp.field %in% c("20min_s4", "20min_s5") ~ "Replicate 1",
+                                   exp.field %in% c("20min_s6", "20min_s7") ~ "Replicate 2",
+                                   exp.field %in% c("20min_s8", "20min_s9") ~ "Replicate 3"), colony)) 
+  
+```
+
+
+```{r}
+# dy.pup1.rep1.all <- aic.df %>% 
+#   filter(red == "pup1-rfp", treatment == "none", degron %in% c("cln2.3","mODC.2", "stable.2") ) %>% 
+#   filter(ifelse(degron == "stable.2", dy < 0.1, dy < 0.5)) %>% 
+#   group_by(cell.id) %>% 
+#   # filter(model == "exponential") 
+#   filter(ifelse(degron == "mODC.2", model == "dy.dm", model == "exponential")) %>%
+#   mutate(dm = ifelse(is.na(dm), Inf, dm)) %>%
+#   filter( dm > 0.00001)
+# 
+# dy.pup1.rep1 <- aic.df %>% 
+#   filter(red == "pup1-rfp", treatment == "none", degron %in% c("cln2.3","mODC.2", "stable.2") ) %>% 
+#   filter(ifelse(degron == "stable.2", dy < 0.1, dy < 0.5)) %>% 
+#   group_by(cell.id) %>% 
+#   filter(model == "exponential") 
+#   # filter(ifelse(degron == "mODC.2", model == "dy.dm", model == "exponential")) %>%
+#   # mutate(dm = ifelse(is.na(dm), Inf, dm)) %>%
+#   # filter( dm > 0.00001)
+
+#only dy.dm
+dy.pup1.rep1.mat <- aic.df %>% 
+  filter(red == "pup1-rfp", treatment == "none" ) %>% 
+  filter(ifelse(degron == "stable.2", dy < 0.1, dy < 0.5)) %>% 
+  group_by(cell.id) %>% 
+  filter(model == "dy.dm") %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm)) %>%
+  filter( dm > 0.00001)
+```
+
+#with exponential model for all the GFPs
+```{r}
+# fig2.df <- dy.pup1.rep1.mat %>% 
+#   left_join(.,pup1.cell.attr %>%
+#               filter(red == "pup1-rfp", treatment == "none", degron %in% c("cln2.3","mODC.2", "stable.2")), by = c("cell.id","treatment","degron","red","colony","exp.field"))
+# 
+# multiple.pup1 <- fig2.df %>% 
+#   mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+#          rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+#   filter(rfp.mean.bg.sub.puncta > 0) %>% 
+#   group_by(cell.id) %>% 
+#   tally() %>% 
+#   filter(n>1)
+# 
+# fig2.df <- fig2.df %>% 
+#   group_by(cell.id) %>% 
+#   mutate(rfp.mean.bg.sub.puncta = ifelse(cell.id %in% multiple.pup1$cell.id , mean(rfp.mean.bg.sub.puncta), rfp.mean.bg.sub.puncta )) %>% 
+#     distinct(cell.id, .keep_all = TRUE) 
+```
+
+#with dy.dm model for mODC and exponential for cln2 and canonical GFP
+```{r}
+# fig2.df.all <- dy.pup1.rep1.all %>% 
+#   left_join(.,pup1.cell.attr %>%
+#               filter(red == "pup1-rfp", treatment == "none", degron %in% c("cln2.3","mODC.2", "stable.2")), by = c("cell.id","treatment","degron","red","colony","exp.field"))
+# 
+# multiple.pup1 <- fig2.df.all %>% 
+#   mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+#          rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+#   filter(rfp.mean.bg.sub.puncta > 0) %>% group_by(cell.id) %>% tally() %>% filter(n>1)
+# 
+# fig2.df.all <- fig2.df.all %>% 
+#   group_by(cell.id) %>% 
+#   mutate(rfp.mean.bg.sub.puncta = ifelse(cell.id %in% multiple.pup1$cell.id , mean(rfp.mean.bg.sub.puncta), rfp.mean.bg.sub.puncta )) %>% 
+#     distinct(cell.id, .keep_all = TRUE) 
+```
+
+#with dy.dm model for mODC and exponential for cln2 and canonical GFP
+```{r}
+fig2.df.mat <- dy.pup1.rep1.mat %>% 
+  left_join(.,pup1.cell.attr %>%
+              filter(red == "pup1-rfp", treatment == "none"), by = c("cell.id","treatment","degron","red","colony","exp.field"))
+
+multiple.pup1 <- fig2.df.mat %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% group_by(cell.id) %>% tally() %>% filter(n>1)
+
+fig2.df.mat <- fig2.df.mat %>% 
+  group_by(cell.id) %>% 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(cell.id %in% multiple.pup1$cell.id , mean(rfp.mean.bg.sub.puncta), rfp.mean.bg.sub.puncta )) %>% 
+    distinct(cell.id, .keep_all = TRUE) 
+```
+
+#filter for SSE < 0.05
+```{r}
+# fig2.df.2 <- fig2.df %>% filter(value< 0.05)
+# fig2.df.all.2 <- fig2.df.all %>% filter(value< 0.05)
+# 
+# fig2.df.mat <- fig2.df.mat %>% filter(value< 0.05)
+```
+
+area vs dy (gpf-mODC , gfp-cln2)
+```{r}
+area.pup1.rep1.plot <- fig2.df.mat %>% 
+  mutate(degron = case_when(degron == "cln2.3" ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC", 
+                            degron == "stable.2" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2", "GFP"))) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>%
+  filter(rfp.mean.bg.sub.puncta > 0, degron!= "GFP") %>% 
+  ggplot(.,aes(x = area, y = t.half, color = colony))+
+  geom_point(size = 0.1, alpha = 0.5)+
+  facet_wrap(~degron, scales = "free")+
+  geom_smooth(method = "lm", se = FALSE, size = 0.5)+
+  stat_cor(size = 2, show.legend = FALSE, aes(label = paste(..r.label.., cut(..p.., 
+                                              breaks = c(-Inf, 0.0001, 0.001, 0.01, 0.05, Inf),
+                                              labels = c("'****'", "'***'", "'**'", "'*'", "'ns'")), 
+                            sep = "~")))+
+  theme_pubr()+
+  theme(text = element_text(size = 8))+
+  scale_color_brewer(name = NULL, palette = "Dark2")+
+  scale_x_continuous(labels = scales::label_number(scale = 1/1000))+
+  ylab("Half-Life [Min.]")+
+  xlab("Area [A.U] (x1000)")
+
+area.pup1.rep1.plot
+```
+
+area vs dy (stable GFP)
+```{r}
+area.pup1.stable.plot <- fig2.df.all.2 %>% 
+  mutate(degron = case_when(degron == "cln2.3" ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC", 
+                            degron == "stable.2" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2", "GFP"))) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>%
+  filter(rfp.mean.bg.sub.puncta > 0, degron!= "GFP") %>% 
+  ggplot(.,aes(x = area, y = t.half , color = colony))+
+  geom_point(size = 0.5)+
+  facet_wrap(~degron, scales = "free")+
+  geom_smooth(method = "lm", se = FALSE)+
+  stat_cor(size = 2, show.legend = FALSE, aes(label = paste(..r.label.., cut(..p.., 
+                                              breaks = c(-Inf, 0.0001, 0.001, 0.01, 0.05, Inf),
+                                              labels = c("'****'", "'***'", "'**'", "'*'", "'ns'")), 
+                            sep = "~")),
+           color = "red")+
+  theme_pubr()+
+  theme(text = element_text(size = 8))+
+  scale_color_brewer(name = NULL, palette = "Dark2")+
+  scale_x_continuous(labels = scales::label_number(scale = 1/1000))+
+  ylab("Half-Life [Min.]")+
+  xlab("Area [A.U] (x1000)")
+
+area.pup1.stable.plot
+```
+
+binning area
+```{r}
+fig2.df.2 %>% 
+  mutate(degron = case_when(degron == "cln2.3" ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC", 
+                            degron == "stable.2" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2", "GFP"))) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  split(list(.$degron, .$colony)) %>% 
+  map(function(a){
+    a %>% 
+    mutate(area_bin = cut(area, breaks = quantile(.$area, probs = seq(0, 1, by = 0.5))))  %>% 
+      arrange(area_bin) 
+  }) %>% 
+  bind_rows(.id = "test") %>% 
+  separate(col = test, into = c("degron","colony"), sep = "\\.") %>% 
+  # filter(degron == "GFP-mODC") %>% 
+  ggplot(.,aes(x = area_bin, y = t.half, fill = colony))+
+  geom_boxplot(outlier.size = 0.5)+
+    facet_wrap(~degron, scales = "free")+
+  stat_compare_means(method = "t.test")+
+  theme(text = element_text(size = 8), 
+        axis.text.x = element_text(angle = 90))
+
+fig2.df %>% 
+  mutate(degron = case_when(degron == "cln2.3" ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC", 
+                            degron == "stable.2" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2", "GFP"))) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+  split(list(.$degron, .$colony)) %>% 
+  map(function(a){
+    a %>% 
+    mutate(area_bin = cut(area, breaks = quantile(.$area, probs = seq(0, 1, by = 0.2))))  %>% 
+      arrange(area_bin) %>% 
+      group_by(area_bin) %>% 
+      summarise(cv.thalf = sd(t.half)/mean(t.half))
+  }) %>% 
+  bind_rows(.id = "test") %>% 
+  separate(col = test, into = c("degron","colony"), sep = "\\.") %>% 
+  ggplot(.,aes(x = area_bin, y = cv.thalf, color = colony))+
+  geom_point()+
+ facet_wrap(~degron, scales = "free")+
+  stat_compare_means()+
+  theme(text = element_text(size = 8), 
+        axis.text.x = element_text(angle = 90))
+```
+
+cv in area
+```{r}
+fig2.df %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  mutate(degron = case_when(degron == "cln2.3" ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC", 
+                            degron == "stable.2" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2", "GFP"))) %>% 
+  group_by(degron, colony) %>% 
+  summarise(cv.area = sd(area)/mean(area), 
+            no.cell = NROW(dy), 
+            cv.gfp = sd(gfp.mean.bg.af.sub.new)/mean(gfp.mean.bg.af.sub.new), 
+            fano.gfp = var(gfp.mean.bg.af.sub.new)/mean(gfp.mean.bg.af.sub.new),
+            cv.pup1 = sd(rfp.mean.bg.sub.puncta)/mean(rfp.mean.bg.sub.puncta),
+            fano.pup1 = var(rfp.mean.bg.sub.puncta)/mean(rfp.mean.bg.sub.puncta), 
+            cv.spheracity = sd(spheracity)/mean(spheracity)) %>% 
+  mutate_if(is.numeric, ~round(.,digits = 2))
+```
+
+cellular shapes
+```{r}
+fig2.df %>% 
+  mutate(elip_shape = Elip_B/Elip_C) %>% 
+  # mutate_if(is.numeric, ~round(.,digits = 2)) %>% 
+  filter(elip_shape > 0.9) %>% 
+  ggplot(.,aes(x = rfp.mean.bg.sub.puncta, y = dy, color = colony))+
+  geom_point()+
+  geom_smooth(method = "lm", se = F)+
+  stat_cor()+
+  facet_wrap(~degron, scales = "free")
+
+fig2.df %>% 
+  mutate(elip_shape = Elip_B/Elip_C) %>% 
+  # mutate_if(is.numeric, ~round(.,digits = 2)) %>% 
+  filter(elip_shape < 0.9) %>% 
+  ggplot(.,aes(x = rfp.mean.bg.sub.puncta, y = dy, color = colony))+
+  geom_point()+
+  geom_smooth(method = "lm", se = F)+
+  stat_cor()+
+  facet_wrap(~degron, scales = "free")
+
+fig2.df %>% 
+  mutate(elip_shape = Elip_B/Elip_C) %>% 
+  filter(elip_shape > 0.8 & area < 2000) %>% 
+  ggplot(.,aes(y = dy, x = rfp.mean.bg.sub.puncta, color = colony))+
+  geom_point()+
+  geom_smooth(method = "lm", se = F)+
+  stat_cor()+
+  facet_wrap(~degron)
+
+fig2.df %>% 
+  mutate(elip_shape = Elip_B/Elip_C) %>%
+  filter(elip_shape > 0.8 & area > 4000) %>% 
+  ggplot(.,aes(y = dy, x = rfp.mean.bg.sub.puncta, color = colony))+
+  geom_point()+
+  geom_smooth(method = "lm", se = F)+
+  stat_cor()+
+  facet_wrap(~degron)
+```
+
+dapi vs pup1-rfp
+```{r}
+fig2.df.mat %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  ggplot(.,aes(x = dapi.sum.bg.sub.puncta, y = rfp.mean.bg.sub.puncta, color = colony))+
+  geom_point(size = 0.5)+
+  geom_smooth(method = "lm",se = FALSE)+
+  facet_wrap(~degron, scales = "free")+
+  stat_cor()+
+  theme_pubr()+
+  theme(text = element_text(size = 8))
+
+```
+
+dy vs gfp intensity
+```{r}
+gfpInt.pup1.rep1.plot <- fig2.df.mat %>% 
+  filter(!(degron %in% c("cln2","cln2.2","mODC","stable"))) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.4") ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC", 
+                            degron %in% c("stable.2","stable.3") ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2", "GFP"))) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  ggplot(.,aes(x = gfp.mean.bg.af.sub.new, y = log(2)/dy, color = colony))+
+  geom_point(size = 0.5)+
+  geom_smooth(method = "lm", se = FALSE)+
+  facet_wrap(~degron, scales = "free")+
+  stat_cor()+
+  theme_pubr()+
+  theme(text = element_text(size = 8))+
+  scale_color_brewer(name = NULL, palette = "Dark2")+
+  ylab("Half-Life [Min.]")+
+  xlab("GFP Mean Intensity [A.U]")
+
+gfpInt.pup1.rep1.plot
+
+```
+
+binning gfp intensity 
+```{r}
+fig2.df %>% 
+  mutate(degron = case_when(degron == "cln2.3" ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC", 
+                            degron == "stable.2" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2", "GFP"))) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+  split(list(.$degron, .$colony)) %>% 
+  map(function(a){
+    a %>% 
+    mutate(gfp_bin = cut(gfp.mean.bg.af.sub.new, breaks = quantile(.$gfp.mean.bg.af.sub.new, probs = seq(0, 1, by = 0.2))))  %>% 
+      arrange(gfp_bin)
+  }) %>% bind_rows() %>% 
+
+  ggplot(.,aes(x = gfp_bin, y = t.half, fill = colony))+
+  geom_boxplot(outlier.size = 0.5)+
+    facet_wrap(~degron, scales = "free")+
+  theme(text = element_text(size = 8), 
+        axis.text.x = element_text(angle = 90))
+```
+
+
+#dapi distribution
+```{r}
+dapi.dist <- fig2.df.mat  %>% 
+  filter(!(degron %in% c("cln2","cln2.2","mODC","stable"))) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.4") ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC", 
+                            degron %in% c("stable.2","stable.3") ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2", "GFP"))) %>%
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta >0) %>% 
+  ggplot(.,aes(x = dapi.sum.bg.sub.puncta))+
+  geom_histogram(position = "dodge")+
+  facet_grid(~degron, scales = "free")+
+  theme_pubr()+
+  theme(text = element_text(size = 8))+
+  scale_fill_brewer(name = NULL, palette = "Set2")+
+  scale_x_continuous(labels = scales::label_number(scale = 1/1000))+
+  xlab("Total DAPI int. [A.U] (x1000)")
+
+dapi.dist
+```
+
+total dapi intensity vs dy
+```{r}
+dapiInt.pup1.rep1.plot <- fig2.df.mat %>% 
+  filter(!(degron %in% c("cln2","cln2.2","mODC","stable"))) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.4") ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC", 
+                            degron %in% c("stable.2","stable.3") ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2", "GFP"))) %>%
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta >0, degron != "GFP") %>% 
+  ggplot(.,aes(x = dapi.sum.bg.sub.puncta, y = log(2)/dy , color = colony))+
+  geom_point(size = 0.1, alpha = 0.5)+
+  geom_smooth(method = "lm", se = FALSE, size = 0.5)+
+  facet_wrap(~degron, scales = "free")+
+  stat_cor(size = 2, show.legend = FALSE, aes(label = paste(..r.label.., cut(..p..,
+                                                                             breaks = c(-Inf, 0.0001, 0.001, 0.01, 0.05, Inf),
+                                                                             labels = c("'****'", "'***'", "'**'", "'*'", "'ns'")),
+                                                            sep = "~")),
+           label.x.npc = "middle")+
+  theme_pubr()+
+  theme(text = element_text(size = 8),
+        axis.title.y = element_blank())+
+  scale_color_brewer(name = NULL, palette = "Dark2")+
+  scale_x_continuous(labels = scales::label_number(scale = 1/10000))+
+  xlab("Total DAPI int. [A.U] (x10000)")
+  # ylab("Half-Life [Min.]")
+
+dapiInt.pup1.rep1.plot
+```
+
+pup1-tDimer vs dy
+```{r}
+tDimerInt.pup1.rep1.plot <- fig2.df.all.2 %>% 
+  mutate(degron = case_when(degron == "cln2.3" ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC", 
+                            degron == "stable.2" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2", "GFP"))) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta >0, degron != "GFP") %>% 
+  ggplot(.,aes(x = rfp.mean.bg.sub.puncta, y = log(2)/dy, color = colony))+
+  geom_point(size = 0.1, alpha = 0.5)+
+  geom_smooth(method = "lm", se = FALSE, size = 0.5)+
+  facet_wrap(~degron, scales = "free")+
+  stat_cor(size = 2, show.legend = FALSE, aes(label = paste(..r.label.., cut(..p.., 
+                                              breaks = c(-Inf, 0.0001, 0.001, 0.01, 0.05, Inf),
+                                              labels = c("'****'", "'***'", "'**'", "'*'", "'ns'")), 
+                            sep = "~")))+
+  theme_pubr()+
+  theme(text = element_text(size = 8),
+        axis.title.y = element_blank())+
+  scale_color_brewer(name = NULL, palette = "Dark2")+
+  scale_x_continuous(labels = scales::label_number(scale = 1/100))+
+  ylab("Half-Life [Min.]")+
+  xlab("Pup1-tDimer Mean Intensity [A.U] (x100)")
+
+tDimerInt.pup1.rep1.plot
+```
+
+binning by pup1-rfp 
+```{r}
+corttest <- fig2.df %>% 
+  ungroup() %>% 
+  mutate(degron = case_when(degron == "cln2.3" ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC", 
+                            degron == "stable.2" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2", "GFP"))) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+    filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  split(list(.$degron, .$colony)) %>% 
+  map(function(a){
+    a %>% 
+    mutate(pup1_bin = cut(rfp.mean.bg.sub.puncta, 
+                          breaks = quantile(.$rfp.mean.bg.sub.puncta, probs = seq(0, 1, by = 0.2)))) 
+  })
+
+lapply(corttest, function(a){
+  a %>% 
+    split(.$pup1_bin) %>% 
+    map(function(b){
+      cor.test(x = b$t.half, y = b$rfp.mean.bg.sub.puncta, method = "pearson", alternative = "two.sided") %>% 
+        broom::tidy()
+    }) %>% 
+    bind_rows(.id = "pup1_bin")
+}) %>%  
+  bind_rows(.id = "test") %>% 
+  separate(col = test, into = c("degron","colony"), sep = "\\.") %>% 
+  # filter(p.value < 0.05) %>% 
+  arrange(degron) %>% filter(degron == "GFP-mODC")
+
+
+
+
+
+```
+
+#pup1 vs half lives in pup1-bins
+```{r}
+corttest.all.pup1 <- fig2.df.mat %>% 
+  ungroup() %>% 
+  mutate(degron = case_when(degron == "cln2.3" ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC", 
+                            degron == "stable.2" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2", "GFP"))) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+    filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  split(list(.$degron, .$colony)) %>% 
+  map(function(a){
+    a %>% 
+    mutate(pup1_bin = cut(rfp.mean.bg.sub.puncta, 
+                          breaks = quantile(.$rfp.mean.bg.sub.puncta, probs = seq(0, 1, by = 0.2)))) 
+  })
+
+lapply(corttest, function(a){
+  a %>% 
+    split(.$pup1_bin) %>% 
+    map(function(b){
+      cor.test(x = b$t.half, y = b$rfp.mean.bg.sub.puncta, method = "pearson", alternative = "two.sided") %>% 
+        broom::tidy()
+    }) %>% 
+    bind_rows(.id = "pup1_bin")
+}) %>%  
+  bind_rows(.id = "test") %>% 
+  separate(col = test, into = c("degron","colony"), sep = "\\.") %>% 
+  filter(p.value < 0.05) %>% 
+  arrange(degron) %>% filter(degron == "GFP-mODC")
+
+lapply(corttest.all, function(a){
+  a %>% 
+    split(.$pup1_bin) %>% 
+    map(function(b){
+      cor.test(x = b$t.half, y = b$rfp.mean.bg.sub.puncta, method = "pearson", alternative = "two.sided") %>% 
+        broom::tidy()
+    }) %>% 
+    bind_rows(.id = "pup1_bin")
+}) %>%  
+  bind_rows(.id = "test") %>% 
+  separate(col = test, into = c("degron","colony"), sep = "\\.") %>% 
+  filter(p.value < 0.05) %>% 
+  arrange(degron) %>% filter(degron == "GFP-mODC")
+```
+
+```{r}
+lapply(corttest.all, function(a){
+  a %>% 
+      ggplot(.,aes(x = t.half, y = rfp.mean.bg.sub.puncta))+
+        geom_point()+
+        geom_smooth(method = "lm")+
+        stat_cor()+
+    facet_wrap(~pup1_bin, scales = "free")
+})
+
+lapply(corttest, function(a){
+  a %>% 
+      ggplot(.,aes(x = t.half, y = rfp.mean.bg.sub.puncta))+
+        geom_point()+
+        geom_smooth(method = "lm")+
+        stat_cor()+
+    facet_wrap(~pup1_bin, scales = "free")+
+    scale_x_log10()
+}) 
+```
+
+#dapi vs half lives in dapi-bins
+```{r}
+corttest.all <- fig2.df.mat %>% 
+  ungroup() %>% 
+  filter(!(degron %in% c("cln2","cln2.2","mODC","stable"))) %>% 
+  # mutate(degron = case_when(degron %in% c("cln2.3","cln2.4") ~ "GFP-CLN2",
+  #                           degron == "mODC.2" ~ "GFP-mODC", 
+  #                           degron %in% c("stable.2","stable.3") ~ "GFP"),
+  #        degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2", "GFP"))) %>%
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+    filter(rfp.mean.bg.sub.puncta > 0, 
+           dapi.sum.bg.sub.puncta > 0) %>% 
+  split(list(.$degron)) %>% 
+  map(function(a){
+    a %>% 
+    mutate(dapi_bin = cut(dapi.sum.bg.sub.puncta/10000, 
+                          breaks = quantile(.$dapi.sum.bg.sub.puncta/10000, probs = seq(0, 1, by = 0.1))),
+           pup1_bin = cut(rfp.mean.bg.sub.puncta, 
+                          breaks = quantile(rfp.mean.bg.sub.puncta, probs = seq(0,1,by = 0.1)))) 
+  })
+
+map(corttest.all, function(a){
+  a %>% 
+    filter(is.na(dapi_bin))
+})
+```
+
+```{r}
+lapply(corttest.all, function(a){
+  a %>% 
+    filter(!is.na(dapi_bin)) %>% 
+      ggplot(.,aes(y = t.half, x = dapi_bin))+
+        geom_boxplot()
+})
+
+lapply(corttest.all, function(a){
+  a %>% 
+    filter(!is.na(pup1_bin)) %>% 
+      ggplot(.,aes(y = t.half, x = pup1_bin))+
+        geom_boxplot()
+})
+
+
+```
+
+
+
+#for cln2 cells divide cells into 1c vs 2c cells based on DAPI staining
+cln2
+```{r}
+#half life vs pup1-tdimer
+fig2.df.mat %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+  filter(degron %in% c("cln2.3","cln2.4"), rfp.mean.bg.sub.puncta > 0) %>% 
+  ungroup() %>% 
+  mutate(cell.cycle = ifelse(dapi.sum.bg.sub.puncta > 30000, "2c","1c")) %>% 
+  ggplot(.,aes(x = rfp.mean.bg.sub.puncta, y = t.half, color = cell.cycle))+
+  geom_point(size = 0.5)+
+  stat_cor()+
+  geom_smooth(method = "lm")
+
+#how does the distriibution of pup1-tDimer changes in each bin
+fig2.df.mat %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+  filter(degron %in% c("cln2.3","cln2.4"), rfp.mean.bg.sub.puncta > 0) %>% 
+  ungroup() %>% 
+  mutate(cell.cycle = ifelse(dapi.sum.bg.sub.puncta > 30000, "2c","1c")) %>% 
+  ggplot(.,aes(x = cell.cycle, y = rfp.mean.bg.sub.puncta))+
+  geom_boxplot()+
+  # geom_jitter()+
+  stat_compare_means(method = "t.test")
+```
+
+#designating cells as high and low DNA content based on the median of the total DAPI intensity
+#and checking if the variance in t-hallf between the low and high dapi content is significantly different 
+```{r}
+fig2.dapi.df <- fig2.df.mat %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>%
+  filter(!(degron %in% c("cln2","cln2.2","mODC","stable"))) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.4") ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC", 
+                            degron %in% c("stable.2","stable.3") ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2", "GFP"))) %>% 
+  ungroup() %>% 
+  group_by(degron) %>% 
+  mutate(cell.cycle = ifelse(dapi.sum.bg.sub.puncta > median(dapi.sum.bg.sub.puncta), "high", "low") , 
+         cell.cycle = factor(cell.cycle, levels = c("low","high")))
+
+#calculating the F-test significance to see if the variance in two groups are different 
+dapi.half.var <- fig2.dapi.df %>%  
+  split(list(.$degron)) %>% 
+  map(function(a){
+    var.test(t.half~cell.cycle, data = a) %>% 
+      broom::tidy() %>% 
+      mutate(cell.cycle = a$cell.cycle[1], 
+             p.value = paste("F-test, p =", signif(p.value, digits = 4))) 
+  }) %>% 
+  bind_rows(.id = "degron")
+```
+
+##mODC 
+```{r}
+modc.dapi.half.plt <- fig2.dapi.df %>%
+  filter(degron == "GFP-mODC") %>% 
+  ungroup() %>% 
+  ggplot(.,aes(x = cell.cycle, y = t.half))+
+  geom_boxplot(outlier.shape = NA)+
+  # geom_jitter(size = 0.2, width = 0.3, color = "gray50")+
+  geom_text(data = dapi.half.var %>%
+              filter(degron == "GFP-mODC") , aes(x = 1.3, y = 18, label = p.value),
+            size = 2)+
+  stat_compare_means(method = "t.test", size = 2 , label.x = 1, label.y = 20)+
+  # facet_wrap(~colony,scales = "free")+
+  ylim(4,22)+
+  theme_pubr()+
+  ylab("Half-Life [Min.]")+
+  theme(text = element_text(size = 8),
+        axis.title.x =  element_blank())
+modc.dapi.half.plt 
+```
+##Stable GFP
+```{r}
+stable.dapi.half.plt <- fig2.dapi.df  %>% 
+  filter(degron == "GFP") %>% 
+  ungroup() %>%  
+  ggplot(.,aes(x = cell.cycle, y = t.half))+
+  geom_boxplot(outlier.shape = NA)+
+  # geom_jitter(size = 0.2, width = 0.3, color = "gray50")+
+  geom_text(data = dapi.half.var %>%
+              filter(degron == "GFP") , aes(x = 1.5, y = 39, label = p.value),
+            size = 2)+
+  stat_compare_means(method = "t.test", size = 2 , label.x = 1, label.y = 40)+
+  # facet_wrap(~colony,scales = "free")+
+  ylim(4,40)+
+  theme_pubr()+
+  ylab("Half-Life [Min.]")+
+  theme(text = element_text(size = 8),
+        axis.title.x =  element_blank())
+
+stable.dapi.half.plt
+
+```
+##CLN2
+```{r}
+cln2.dapi.half.plt <- fig2.dapi.df %>% 
+  filter(degron == "GFP-CLN2") %>% 
+  ungroup() %>% 
+  ggplot(.,aes(x = cell.cycle, y = t.half))+
+  geom_boxplot(outlier.shape = NA)+
+  # geom_jitter(size = 0.2, width = 0.3, color = "gray50")+
+  geom_text(data = dapi.half.var %>%
+              filter(degron == "GFP-CLN2") , aes(x = 1.3, y = 13, label = p.value),
+            size = 2)+
+  stat_compare_means(method = "t.test", size = 2 , label.x = 1, label.y = 14)+
+  # facet_wrap(~colony,scales = "free")+
+  ylim(4,15)+
+  theme_pubr()+
+  ylab("Half-Life [Min.]")+
+  theme(text = element_text(size = 8),
+        axis.title.x =  element_blank())
+
+cln2.dapi.half.plt
+```
+
+
+```{r}
+
+```
+
+
+
+```{r}
+fig2.df %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+  filter(degron == "cln2.3", rfp.mean.bg.sub.puncta > 0) %>% 
+  ungroup() %>% 
+  mutate(cell.cycle = ifelse(dapi.sum.bg.sub.puncta > 50000, "2c","1c")) %>% 
+  group_by(colony, cell.cycle) %>% 
+  summarise(cv.half = sd(t.half)/mean(t.half),
+            cv.pup1 = sd(rfp.mean.bg.sub.puncta)/mean(rfp.mean.bg.sub.puncta),
+            fano.pup1 = var(rfp.mean.bg.sub.puncta)/mean(rfp.mean.bg.sub.puncta))
+
+
+fig2.df %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+  filter(degron == "mODC.2", rfp.mean.bg.sub.puncta > 0) %>% 
+  ungroup() %>% 
+  mutate(cell.cycle = ifelse(dapi.sum.bg.sub.puncta > 50000, "2c","1c")) %>% 
+  group_by(colony, cell.cycle) %>% 
+  summarise(cv.half = sd(t.half)/mean(t.half),
+            cv.pup1 = sd(rfp.mean.bg.sub.puncta)/mean(rfp.mean.bg.sub.puncta),
+            fano.pup1 = var(rfp.mean.bg.sub.puncta)/mean(rfp.mean.bg.sub.puncta))
+
+fig2.df %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta),
+         elipe_shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>% 
+  filter(degron == "stable.2", rfp.mean.bg.sub.puncta > 0) %>% 
+  ungroup() %>% 
+  mutate(cell.cycle = ifelse(dapi.sum.bg.sub.puncta > 90000, "2c","1c")) %>% 
+  group_by(colony, cell.cycle) %>% 
+  summarise(cv.half = sd(t.half)/mean(t.half),
+            cv.pup1 = sd(rfp.mean.bg.sub.puncta)/mean(rfp.mean.bg.sub.puncta),
+            fano.pup1 = var(rfp.mean.bg.sub.puncta)/mean(rfp.mean.bg.sub.puncta))
+```
+
+
+```{r fig.height= 5, fig.width= 8}
+top.sec <- (area.pup1.rep1.plot|dapiInt.pup1.rep1.plot|tDimerInt.pup1.rep1.plot)+plot_layout(guides = "collect")&theme(legend.position = "top")
+bottom.sec.1 <- cln2.dapi.half.plt
+bottom.sec.2 <- modc.dapi.half.plt
+
+fig2.plt <- (top.sec/(bottom.sec.1|bottom.sec.2))+
+  plot_layout(widths = c(0.6, 0.6))+
+  plot_annotation(tag_levels = "A")
+
+fig2.plt
+```
+
+```{r}
+ggsave(plot = fig2.plt , filename = "fig2.pdf", path = "~/plots/paper1/figures/fig_2/", width = 8, height = 5)
+ggsave(plot = fig2.plt , filename = "fig2.pdf", path = "~/plots/paper1/figures/fig_2/", width = 8, height = 5)
+```
+#suplemental figure 3
+```{r}
+
+```
+
+

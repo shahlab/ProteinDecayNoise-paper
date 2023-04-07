@@ -1,0 +1,1526 @@
+---
+title: "figure 1"
+output: pdf
+---
+fig1a: methods cartoon
+fig1b: model 
+fig1c: single cell gfp profile from each GFP
+
+
+Libraries to load
+```{r}
+library(data.table)
+library(tidyverse)
+library(reshape2)
+library(gganimate)
+library(ggridges)
+library(ggpubr)
+library(patchwork)
+```
+
+load the gfp timelapse used for the mechanistic model
+```{r}
+all.exp.list <- read_csv("~/plots/all_data/all_exp_data.csv")
+
+aic.df <- read_csv("~/plots/all_data/aic.csv")
+
+```
+
+#distribution of the AICs 
+```{r}
+read_csv("~/plots/all_data/aic.csv") %>%
+  filter(value < 0.1 , red == "pup1-rfp") %>% 
+  ggplot(.,aes(x = aic, fill = model))+
+  geom_histogram(position = "dodge")+
+  facet_wrap(treatment~degron, scales = "free")
+
+read_csv("~/plots/all_data/aic.csv") %>%
+  filter(model %in% c("dy.dm","exponential")) %>% 
+  filter( red == "tef2-mCherry") %>% 
+  ggplot(.,aes(x = value, fill = model))+
+  geom_histogram(position = "dodge")+
+  facet_wrap(~degron, scales = "free")
+
+read_csv("~/plots/all_data/aic.csv") %>%
+  filter(model %in% c("dy.dm","exponential")) %>% 
+  filter( treatment == "none") %>% 
+  ggplot(.,aes(x = value, fill = model))+
+  geom_histogram(position = "dodge")+
+  facet_grid(red~degron, scales = "free")+
+  scale_x_log10()
+  
+```
+
+#add the replicate info 
+```{r}
+aic.df <- aic.df %>% 
+  mutate(exp.field = paste0(str_split(cell.id, "_", simplify = T)[,2],"_",
+                            str_split(cell.id, "_", simplify = T)[,3]),
+    colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8" , "20min_s9") ~ "Replicate 3"))
+
+aic.df <- aic.df %>% 
+  mutate(colony = ifelse(degron == "stable" & red == "pup1-rfp", 
+                         case_when(exp.field %in% c("20min_s4", "20min_s5") ~ "Replicate 1",
+                                   exp.field %in% c("20min_s6", "20min_s7") ~ "Replicate 2",
+                                   exp.field %in% c("20min_s8", "20min_s9") ~ "Replicate 3"), colony))
+  
+```
+
+#adding the cellular attributes
+```{r}
+pup1.cell.attr <- read_csv("~/plots/all_data/all_pup1_cell_attr.csv")
+
+pup1.cell.attr <- pup1.cell.attr %>% 
+  mutate(exp.field = paste0(str_split(cell.id, "_", simplify = T)[,2],"_",
+                            str_split(cell.id, "_", simplify = T)[,3]),
+    colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8" , "20min_s9") ~ "Replicate 3"))
+
+pup1.cell.attr <- pup1.cell.attr %>% 
+  mutate(colony = ifelse(degron == "stable" & red == "pup1-rfp", 
+                         case_when(exp.field %in% c("20min_s4", "20min_s5") ~ "Replicate 1",
+                                   exp.field %in% c("20min_s6", "20min_s7") ~ "Replicate 2",
+                                   exp.field %in% c("20min_s8", "20min_s9") ~ "Replicate 3"), colony)) 
+
+#removing the multiple punctas
+multiple.pup1 <- pup1.cell.attr %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% group_by(cell.id) %>% tally() %>% filter(n>1)
+
+#if a cell has no puncta, then make the rfp mean value of puncta == 0 and then remove those cells 
+pup1.cell.attr <-  pup1.cell.attr %>% 
+  group_by(cell.id) %>% 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(cell.id %in% multiple.pup1$cell.id , mean(rfp.mean.bg.sub.puncta), rfp.mean.bg.sub.puncta )) %>% 
+    distinct(cell.id, .keep_all = TRUE) 
+```
+
+
+```{r}
+#to select a cell from each replicate
+aic.df %>% 
+  left_join(.,all.exp.list %>% filter(image.no ==1) %>% select(-delta.time), by = c("cell.id", "red","degron","treatment","exp.field")) %>% 
+  filter(degron == "stable.2" ) %>% 
+  filter(cell.id == "1000001840_20min_s3_stable.2_pup1-rfp_none")
+
+```
+
+predicted values function
+```{r}
+dy.dm.f.fn <- function(dy, f, dm, delta.time){
+  pred.gfp <- ((dy * (1 - f) * exp(-dy * delta.time)) / dm) + 
+              exp(-dy * delta.time) +
+              (1 - exp(-dy * delta.time)) * f -
+              ((dy * (1 - f) * exp(-(dy + dm) * delta.time)) / dm)
+  return(pred.gfp)
+}
+
+dy.f.fn <- function(dy,f,delta.time){
+  pred.gfp <-  exp(-dy * delta.time) +(1 - exp(-dy * delta.time)) * f
+  return(pred.gfp)
+}
+  
+exponential.fn <- function(dy, delta.time){
+  pred.gfp <- exp(-dy * delta.time)
+  return(pred.gfp)
+}
+  
+dy.dm.fn <- function(dy, dm, delta.time){
+  pred.gfp <- ((dy  * exp(-dy * delta.time)) / dm) + exp(-dy * delta.time)  -
+              ((dy * 1 * exp(-(dy + dm) * delta.time)) / dm)
+  
+  return(pred.gfp)
+}
+```
+
+##FIG single cell gfp trace
+```{r}
+fig1c.df <- all.exp.list %>% 
+  mutate(colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8" ) ~ "Replicate 3")) %>% 
+  filter(cell.id %in% c( "1000002011_20min_s3_cln2.3_pup1-rfp_none", 
+                         # "1000002178_20min_s6_cln2.3_pup1-rfp_none",
+                         # "1000002067_20min_s7_cln2.3_pup1-rfp_none",
+                         # "1000001755_20min_s4_mODC.2_pup1-rfp_none",
+                          # "1000002114_20min_s6_mODC.2_pup1-rfp_none",
+                         "1000001808_20min_s7_mODC.2_pup1-rfp_none",
+                         # "1000001840_20min_s3_stable.2_pup1-rfp_none"
+                         "1000001968_20min_s5_stable.3_pup1-rfp_none"
+                         # "1000002241_20min_s6_stable.2_pup1-rfp_none"
+                         # "1000002119_20min_s7_stable.2_pup1-rfp_none"
+                         )) %>% 
+  left_join(.,aic.df, by = c("cell.id","red","degron","treatment","colony"))
+
+
+
+```
+predicted values
+```{r}
+fig1c.pred <- fig1c.df %>% 
+  dplyr::select(cell.id, delta.time, gfpMeanBgAFsub, degron, f, dy, dm, aic, value,model,colony) %>% 
+  group_by(cell.id) %>% 
+  mutate(pred.value =  case_when(model == "dy.dm.f" ~ dy.dm.f.fn(dy = dy, 
+                                                                dm = dm,
+                                                               f = f,
+                                                               delta.time = delta.time/60) , 
+                               model == "dy.f" ~ dy.f.fn(f = f, 
+                                                         dy = dy, 
+                                                         delta.time = delta.time/60) , 
+                               model == "exponential" ~ exponential.fn(dy = dy, 
+                                                                       delta.time = delta.time/60) , 
+                               model == "dy.dm" ~ dy.dm.fn(dy = dy, 
+                                                           dm = dm, 
+                                                           delta.time = delta.time/60)) , 
+         pred.gfp = gfpMeanBgAFsub[1]*pred.value)
+
+#changing the levels of the degrons so they appeare in a particular order in facet_grid
+fig1c.pred <- fig1c.pred %>% 
+  mutate( degron = case_when(degron == "cln2.3" ~ "yeGFP-CLN2",
+                            degron == "mODC.2" ~ "yeGFP-mODC",
+                            degron == "stable.3" ~ "yeGFP"), 
+          degron = factor(degron, levels = c("yeGFP-mODC","yeGFP-CLN2","yeGFP")))
+```
+
+single cell plot
+```{r}
+fig1c.pred %>% 
+  ggplot(.,aes(x = delta.time, y = gfpMeanBgAFsub, group = cell.id))+
+  geom_line(color = "gray4")+
+  geom_point(size = 1, color = "green4", alpha = 0.2)+
+  facet_grid(~degron, scales = "free")+
+  theme_pubr()+
+  xlab("Time (sec)")+
+  ylab("GFP Intensity [A.U.]")
+  
+```
+
+Pup1-rfp technical replicate 1
+```{r}
+#get the cells that converged for treatment == none and the experiment with cln2.3, modc.2 and stable.2
+fig1c.aic.df <- aic.df %>% 
+  group_by(cell.id) %>% 
+  filter(model == "dy.dm.f", treatment == "none") %>% 
+  filter(degron %in% c("mODC.2", "cln2.3", "stable.3"))
+
+
+fig1c.allcells.df <- all.exp.list %>% 
+  filter(treatment == "none", degron != "cln2.2") %>% 
+  filter(degron %in% c("mODC.2", "cln2.3", "stable.3") & red == "pup1-rfp") %>% 
+  filter(cell.id %in% fig1c.aic.df$cell.id) #only keeping cells that converged
+  
+
+fig1c.allcells.df <- fig1c.allcells.df %>% 
+  mutate(colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8") ~ "Replicate 3"), 
+         degron = case_when(degron == "cln2.3" ~ "yeGFP-CLN2",
+                            degron == "mODC.2" ~ "yeGFP-mODC",
+                            degron == "stable.3" ~ "yeGFP"),
+         degron = factor(degron , levels = c("yeGFP-mODC","yeGFP-CLN2","yeGFP")))
+
+
+```
+
+all cells GFP trace 
+Fig 1c
+#OLD
+```{r}
+GFPtrace.pup1Rep2022 <- fig1c.allcells.df %>% 
+  # filter(degron == "stable.2") %>% 
+  ggplot(.,aes(x = delta.time/60, y = gfpMeanBgAFsub, group = cell.id))+
+  geom_line(alpha = 0.2, color = "gray")+
+  geom_line(data = fig1c.pred %>% 
+              group_by(cell.id) %>% 
+              mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% 
+              filter(ifelse(degron == "GFP-mODC", model == "dy.dm", model == "exponential")), 
+            aes(x = delta.time/60, y = pred.gfp),
+            color = "black",
+            size = 0.5)+
+  geom_point(data = fig1c.pred %>% 
+              group_by(cell.id) %>% 
+              distinct(delta.time, .keep_all = TRUE) , aes(x = delta.time/60, y = gfpMeanBgAFsub),
+            color = "green4",
+            size = 0.2)+
+  facet_grid(degron~colony ,scales = "free_y")+
+  theme_pubr()+
+  theme(text = element_text(size = 8))+
+        # legend.position = c(0.9,0.95) , 
+        # legend.background = element_blank(), 
+        # legend.spacing.y = unit(0.1, "cm") , 
+        # legend.key.height = unit(1, "mm"))+
+  # guides(fill = guide_legend(byrow = TRUE))+
+  xlab("Time [Min.]")+
+  ylab("GFP Intensity [A.U]")+
+  scale_color_manual(values = c("green4" , "black") , name = NULL, labels = c("Observed", "Predicted"))+ 
+  geom_text(data = fig1c.pred %>% 
+              group_by(cell.id) %>% 
+              distinct(delta.time, .keep_all = TRUE) %>% 
+              filter(delta.time == 0 , 
+                     colony == "Replicate 3",
+                     degron == "GFP-mODC") %>% 
+              slice(rep(1:n(), 2)) %>% 
+              mutate(delta.time = c(1200,1200), 
+                     gfpMeanBgAFsub =c(1100,950)), 
+            label = c("Model" , "Observed"), 
+            color = c("black","green4"), 
+            size = 2)
+  
+
+GFPtrace.pup1Rep2022
+```
+
+
+#Modified Fig 1c
+```{r}
+GFPtrace.pup1Rep2022 <- fig1c.pred %>% 
+  group_by(cell.id) %>%
+  mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% 
+  filter( model == "dy.dm") %>% 
+  ggplot(.,aes(x = delta.time/60, y = pred.gfp))+
+  geom_line(color = "black",
+            size = 0.2)+
+  geom_point(data = fig1c.pred %>% 
+              group_by(cell.id) %>% 
+              distinct(delta.time, .keep_all = TRUE) , aes(x = delta.time/60, y = gfpMeanBgAFsub),
+            color = "green4",
+            size = 0.25)+
+  facet_wrap(~degron ,scales = "free")+
+  theme_pubr()+
+  theme(text = element_text(size = 6),
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        strip.background = element_blank())+
+        # axis.text.x = element_text(angle = 30))+
+        # legend.position = c(0.9,0.95) , 
+        # legend.background = element_blank(), 
+        # legend.spacing.y = unit(0.1, "cm") , 
+        # legend.key.height = unit(1, "mm"))+
+  # guides(fill = guide_legend(byrow = TRUE))+
+  xlab("Time [Min.]")+
+  ylab("GFP Intensity [A.U]")+
+  scale_x_continuous(breaks = c(0,5,10,15,20,25), limits = c(0,25))+
+  scale_color_manual(values = c("green4" , "black") , name = NULL, labels = c("Observed", "Predicted"))+ 
+  geom_text(data = fig1c.pred %>% 
+              group_by(cell.id) %>% 
+              distinct(delta.time, .keep_all = TRUE) %>% 
+              filter(delta.time == 0 ,
+                     degron == "yeGFP") %>% 
+              slice(rep(1:n(), 2)) %>% 
+              mutate(delta.time = c(750,750), 
+                     pred.gfp =c(2550,2400)), 
+            label = c("Model" , "Observed"), 
+            color = c("black","green4"), 
+            size = 2)
+  
+GFPtrace.pup1Rep2022
+```
+##FOR Gordon Research Conference 2023
+#changing the font size 
+```{r}
+GFPtrace.pup1Rep2022.grc <- fig1c.pred %>% 
+  group_by(cell.id) %>%
+  mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% 
+  filter( model == "dy.dm") %>% 
+  ggplot(.,aes(x = delta.time/60, y = pred.gfp))+
+  geom_line(color = "black",
+            size = 0.2)+
+  geom_point(data = fig1c.pred %>% 
+              group_by(cell.id) %>% 
+              distinct(delta.time, .keep_all = TRUE) , aes(x = delta.time/60, y = gfpMeanBgAFsub),
+            color = "green4",
+            size = 0.25)+
+  facet_wrap(~degron ,scales = "free")+
+  theme_pubr()+
+  theme(text = element_text(size = 6),
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        strip.background = element_blank())+
+        # axis.text.x = element_text(angle = 30))+
+        # legend.position = c(0.9,0.95) , 
+        # legend.background = element_blank(), 
+        # legend.spacing.y = unit(0.1, "cm") , 
+        # legend.key.height = unit(1, "mm"))+
+  # guides(fill = guide_legend(byrow = TRUE))+
+  xlab("Time [Min.]")+
+  ylab("GFP Intensity [A.U]")+
+  scale_x_continuous(breaks = c(0,5,10,15,20,25), limits = c(0,25))+
+  scale_color_manual(values = c("green4" , "black") , name = NULL, labels = c("Observed", "Predicted"))+ 
+  geom_text(data = fig1c.pred %>% 
+              group_by(cell.id) %>% 
+              distinct(delta.time, .keep_all = TRUE) %>% 
+              filter(delta.time == 0 ,
+                     degron == "yeGFP") %>% 
+              slice(rep(1:n(), 2)) %>% 
+              mutate(delta.time = c(750,750), 
+                     pred.gfp =c(2550,2400)), 
+            label = c("Model" , "Observed"), 
+            color = c("black","green4"), 
+            size = 2)
+  
+GFPtrace.pup1Rep2022.grc
+
+ggsave(plot = GFPtrace.pup1Rep2022.grc, filename = "GFPTrace_singCell.png", path = "~/plots/paper1/figures/fig_1/GRC/", width = 4, height = 2)
+```
+
+
+
+
+#on a semi log plot 
+```{r}
+fig1c.allcells.df %>% 
+  group_by(cell.id) %>% 
+  mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  ggplot(.,aes(x = delta.time/60, y = I0_It, group = cell.id))+
+  geom_line(alpha = 0.2, color = "gray")+
+  geom_line(data = fig1c.pred %>% 
+              mutate(dm = ifelse(is.na(dm), Inf, dm)) %>%
+              group_by(cell.id) %>% 
+              filter(ifelse(degron == "GFP-mODC", model == "dy.dm", model == "exponential")) %>%
+              mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+              select(-value) %>% 
+              pivot_longer(cols = c("I0_It","pred.value")), 
+            aes(x = delta.time/60, y = value, color = name, group = name),
+            # color = "green4",
+            size = 0.5, 
+            alpha = 0.5)+
+  geom_point(data = fig1c.pred %>% 
+              group_by(cell.id) %>% 
+              mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% 
+             filter(ifelse(degron == "GFP-mODC", model == "dy.dm", model == "exponential")) %>%
+             mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) , 
+             aes(x = delta.time/60, y = I0_It),
+            color = "green4",
+            size = 0.5, 
+            alpha = 0.5)+
+  facet_grid(degron~colony ,scales = "free_y")+
+  theme_pubr()+
+  scale_y_log10()+
+  theme(text = element_text(size = 10))+
+  xlab("Time [Min.]")+
+  ylab("GFP Intensity [A.U]")+
+  scale_color_manual(values = c("green4" , "black") , name = NULL, labels = c("Observed", "Predicted"))
+```
+
+```{r}
+fig1c.allcells.df %>% 
+  group_by(cell.id) %>% 
+  mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  ggplot(.,aes(x = delta.time/60, y = I0_It, group = cell.id))+
+  geom_line(alpha = 0.2, color = "gray")+
+  geom_line(data = fig1c.pred %>% 
+              mutate(dm = ifelse(is.na(dm), Inf, dm)) %>%
+              group_by(cell.id) %>% 
+              filter( model == "dy.dm.f") %>%
+              mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+              select(-value) %>% 
+              pivot_longer(cols = c("I0_It","pred.value")), 
+            aes(x = delta.time/60, y = value, color = name, group = name),
+            # color = "green4",
+            size = 0.5, 
+            alpha = 0.5)+
+  geom_point(data = fig1c.pred %>% 
+              group_by(cell.id) %>% 
+              mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% 
+             filter( model == "dy.dm.f") %>%
+             mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) , 
+             aes(x = delta.time/60, y = I0_It),
+            color = "green4",
+            size = 0.5, 
+            alpha = 0.5)+
+  facet_grid(degron~colony ,scales = "free_y")+
+  theme_pubr()+
+  scale_y_log10()+
+  theme(text = element_text(size = 10))+
+  xlab("Time [Min.]")+
+  ylab("GFP Intensity [A.U]")+
+  scale_color_manual(values = c("green4" , "black") , name = NULL, labels = c("Observed", "Predicted"))
+```
+
+```{r}
+fig1c.allcells.df %>% 
+  group_by(cell.id) %>% 
+  mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  ggplot(.,aes(x = delta.time/60, y = I0_It, group = cell.id))+
+  geom_line(alpha = 0.2, color = "gray")+
+  geom_line(data = fig1c.pred %>% 
+              mutate(dm = ifelse(is.na(dm), Inf, dm)) %>%
+              group_by(cell.id) %>% 
+              filter(ifelse(dm > 1 , model %in% c("dy.f","exponential"), model == "dy.dm")) %>%
+              mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+              select(-value) %>% 
+              pivot_longer(cols = c("I0_It","pred.value")), 
+            aes(x = delta.time/60, y = value, color = name, group = name),
+            # color = "green4",
+            size = 0.5, 
+            alpha = 0.5)+
+  geom_point(data = fig1c.pred %>% 
+              group_by(cell.id) %>% 
+              mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% 
+              filter(ifelse(dm > 1, model %in% c("dy.f","exponential"), model == "dy.dm")) %>%
+             mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) , 
+             aes(x = delta.time/60, y = I0_It),
+            color = "green4",
+            size = 0.5, 
+            alpha = 0.5)+
+  facet_grid(degron~colony ,scales = "free_y")+
+  theme_pubr()+
+  scale_y_log10()+
+  theme(text = element_text(size = 10))+
+  xlab("Time [Min.]")+
+  ylab("GFP Intensity [A.U]")+
+  scale_color_manual(values = c("green4" , "black") , name = NULL, labels = c("Observed", "Predicted"))
+```
+
+
+
+
+
+#fig 1d (OLD)
+dont think I need this. 
+```{r}
+SinCellGFPTrace <- fig1c.pred %>% 
+  group_by(cell.id) %>% 
+  filter(model == "dy.dm.f") %>% 
+  select(cell.id, delta.time, gfpMeanBgAFsub, degron, model, colony, pred.gfp) %>% 
+  pivot_longer(cols = c("gfpMeanBgAFsub", "pred.gfp")) %>% 
+  ggplot(.,aes(x = delta.time/60, y = value, color = name ))+
+  geom_line()+
+  geom_point(data = fig1c.pred %>% 
+               group_by(cell.id) %>% 
+               filter(model == "dy.dm.f") ,aes(x = delta.time/60, y = gfpMeanBgAFsub) , color = "green4", size = 0.5)+
+  facet_grid(degron~colony, scales = "free")+
+  theme_pubr()+
+  theme(panel.grid.minor = element_blank(), 
+        legend.position = c(0.9, 0.25) , 
+        legend.background = element_blank())+
+  xlab("Time [Min.]")+
+  ylab("GFP Intensity [A.U.]")+
+  scale_color_manual(values = c("green4" , "black") , name = NULL, labels = c("Observed", "Predicted"))
+```
+
+
+#fig 1d
+```{r}
+pup1RFP.halfLives <- aic.df %>% 
+  filter(red == "pup1-rfp", treatment == "none", degron %in% c("cln2.3","cln2.2","mODC","mODC.2", "stable","stable.2") ) %>% 
+  filter(ifelse(degron %in% c( "stable.2", "stable"), dy < 0.1, dy < 0.5)) %>% 
+  group_by(cell.id) %>% 
+  filter(ifelse(degron == "mODC.2", model == "dy.dm", model == "exponential")) %>% 
+  mutate(degron = case_when(degron == "cln2.3" ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC",
+                            degron == "stable.2" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP"))) %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% 
+  filter( dm > 0.000015) %>% 
+  ggplot(.,aes(y = log(2)/dy, x = degron, fill = colony))+
+  geom_boxplot( outlier.size = 0.5)+
+  # geom_jitter(position = position_jitterdodge(jitter.height = 0, jitter.width = 0.1), size = 0.2, alpha = 0.2)+
+  theme_pubr()+
+  scale_fill_brewer(name = NULL, palette = "Set2")+
+  ylab("Half-Life [Min.]")+
+  theme(axis.title.x = element_blank(), 
+        text = element_text(size = 8), 
+        legend.position = c(0.5, 0.9), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(4 ,"mm"))
+
+pup1RFP.halfLives
+```
+
+#For the modification of the fig 1d
+changing the colony values to include all the replicates
+```{r}
+aic.df.allreps <- aic.df %>% 
+  filter(red == "pup1-rfp", treatment == "none", 
+         degron %in% c("cln2.3","cln2.2","cln2","cln2.4",
+                       "mODC","mODC.2", 
+                       "stable","stable.2","stable.3") ) %>% 
+  filter(ifelse(degron %in% c( "stable.2", "stable", "stable.3"), dy < 0.1, dy < 0.5)) %>% 
+  group_by(cell.id) %>% 
+  filter(model == "dy.dm", dm > 0.000015) %>% 
+  left_join(.,pup1.cell.attr , by = c("cell.id","degron","red", "treatment", "exp.field","colony")) %>% 
+  mutate(colony = case_when(degron == "cln2.2" & colony == "Replicate 1"~ "Replicate 4",
+                            degron == "cln2.2" & colony == "Replicate 2"~ "Replicate 5",
+                            degron == "cln2.2" & colony == "Replicate 3"~ "Replicate 6",
+                            degron == "cln2" & colony == "Replicate 1"~ "Replicate 7",
+                            degron == "cln2" & colony == "Replicate 2"~ "Replicate 8",
+                            degron == "cln2" & colony == "Replicate 3"~ "Replicate 9",
+                            degron == "cln2.4" & colony == "Replicate 1"~ "Replicate 10",
+                            degron == "cln2.4" & colony == "Replicate 2"~ "Replicate 11",
+                            degron == "cln2.4" & colony == "Replicate 3"~ "Replicate 12",
+                            degron == "mODC" & colony == "Replicate 1"~ "Replicate 4",
+                            degron == "mODC" & colony == "Replicate 2"~ "Replicate 5",
+                            degron == "mODC" & colony == "Replicate 3"~ "Replicate 6",
+                            degron == "stable" & colony == "Replicate 1"~ "Replicate 4",
+                            degron == "stable" & colony == "Replicate 2"~ "Replicate 5",
+                            degron == "stable" & colony == "Replicate 3"~ "Replicate 6",
+                            degron == "stable.3" & colony == "Replicate 1"~ "Replicate 7",
+                            degron == "stable.3" & colony == "Replicate 2"~ "Replicate 8",
+                            degron == "stable.3" & colony == "Replicate 3"~ "Replicate 9",
+                            TRUE ~ colony))
+
+
+# aic.df.allreps.all <- aic.df %>% 
+#   filter(red == "pup1-rfp", treatment == "none", 
+#          degron %in% c("cln2.3","cln2.2","cln2","mODC","mODC.2", "stable","stable.2") ) %>% 
+#   filter(ifelse(degron %in% c( "stable.2", "stable"), dy < 0.1, dy < 0.5)) %>% 
+#   group_by(cell.id) %>% 
+#   mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% filter(dm > 0.00001) %>% 
+#   filter(ifelse(degron %in% c("mODC","mODC.2"), model == "dy.dm", model == "exponential")) %>% 
+#   mutate(colony = case_when(degron == "cln2.2" & colony == "Replicate 1"~ "Replicate 4",
+#                             degron == "cln2.2" & colony == "Replicate 2"~ "Replicate 5",
+#                             degron == "cln2.2" & colony == "Replicate 3"~ "Replicate 6",
+#                             degron == "cln2" & colony == "Replicate 1"~ "Replicate 7",
+#                             degron == "cln2" & colony == "Replicate 2"~ "Replicate 8",
+#                             degron == "cln2" & colony == "Replicate 3"~ "Replicate 9",
+#                             degron == "mODC" & colony == "Replicate 1"~ "Replicate 4",
+#                             degron == "mODC" & colony == "Replicate 2"~ "Replicate 5",
+#                             degron == "mODC" & colony == "Replicate 3"~ "Replicate 6",
+#                             degron == "stable" & colony == "Replicate 1"~ "Replicate 4",
+#                             degron == "stable" & colony == "Replicate 2"~ "Replicate 5",
+#                             degron == "stable" & colony == "Replicate 3"~ "Replicate 6",
+#                             TRUE ~ colony))
+
+aic.df.allreps %>%
+  mutate(t.half = log(2)/dy) %>% 
+  filter(t.half > 50)
+```
+
+```{r}
+aic.df.allreps %>% group_by(degron, colony) %>% tally()
+aic.df.allreps.all %>% group_by(degron, colony) %>% tally()
+```
+
+
+getting the meadian values of the half lives for each degron
+```{r}
+avg.half <- aic.df.allreps %>% 
+  # left_join(.,pup1.cell.attr %>% select(-colony) , by = c("cell.id","degron","red", "treatment", "exp.field")) %>% 
+  filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.3","stable.2")) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "GFP-CLN2",
+                            degron %in% c("mODC.2", "mODC")  ~ "GFP-mODC",
+                            degron %in% c("stable","stable.2","stable.3") ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP")) ,
+         t.half = log(2)/dy, 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta >0) %>% 
+  group_by(degron) %>% 
+  summarise(avg.t = median(t.half)) 
+
+# avg.half.all <- aic.df.allreps.all %>% 
+#   mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2") ~ "GFP-CLN2",
+#                             degron %in% c("mODC.2", "mODC")  ~ "GFP-mODC",
+#                             degron %in% c("stable","stable.2") ~ "GFP"),
+#          degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP")) ,
+#          t.half = log(2)/dy) %>% 
+#   group_by(degron) %>% 
+#   summarise(avg.t = median(t.half))
+
+
+```
+
+#cor with half lives and cellular features while talking to Premal
+Initial GFP 
+```{r}
+aic.df.allreps %>% 
+  filter(!(degron %in% c("cln2","mODC","stable"))) %>% 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "GFP-CLN2",
+                            degron %in% c("mODC.2", "mODC")  ~ "GFP-mODC",
+                            degron %in% c("stable","stable.2","stable.3") ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP")),
+         colony = as.numeric(str_remove(string = colony, pattern = "Replicate ")) ,
+         colony = factor(colony, levels = c(1:12))) %>% 
+  # filter(ifelse(degron == "GFP", gfp.mean.bg.af.sub.new > 1000 , gfp.mean.bg.af.sub.new > 0 )) %>% 
+  ggplot(.,aes(y = gfp.mean.bg.af.sub.new , x = degron, fill = colony))+
+  geom_violin( outlier.size = 0.5)+
+  facet_wrap(~degron, scales = "free")+
+  # geom_jitter(position = position_jitterdodge(jitter.height = 0, jitter.width = 0.1), size = 0.2, alpha = 0.2)+
+  theme_pubr()+
+  
+  # scale_fill_brewer(name = "Replicate", palette = "Set2")+
+  ylab("Half-Life [Min.]")+
+  theme(axis.title.x = element_blank(), 
+        text = element_text(size = 8), 
+        legend.position = c(0.4, 0.8), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(3 ,"mm"),
+        legend.spacing.y = unit(-0.25, "cm"))
+```
+Area
+```{r}
+aic.df.allreps %>% 
+  filter(!(degron %in% c("cln2","cln2.2","mODC","stable"))) %>% 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "GFP-CLN2",
+                            degron %in% c("mODC.2", "mODC")  ~ "GFP-mODC",
+                            degron %in% c("stable","stable.2","stable.3") ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP")),
+         colony = as.numeric(str_remove(string = colony, pattern = "Replicate ")) ,
+         colony = factor(colony, levels = c(1:12))) %>% 
+  # filter(ifelse(degron == "GFP", gfp.mean.bg.af.sub.new > 1000 , gfp.mean.bg.af.sub.new > 0 )) %>% 
+  ggplot(.,aes(y = area , x = degron, fill = colony))+
+  geom_violin( outlier.size = 0.5)+
+  facet_wrap(~degron, scales = "free")+
+  # geom_jitter(position = position_jitterdodge(jitter.height = 0, jitter.width = 0.1), size = 0.2, alpha = 0.2)+
+  theme_pubr()+
+  
+  # scale_fill_brewer(name = "Replicate", palette = "Set2")+
+  ylab("Area")+
+  theme(axis.title.x = element_blank(), 
+        text = element_text(size = 8), 
+        legend.position = c(0.4, 0.8), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(3 ,"mm"),
+        legend.spacing.y = unit(-0.25, "cm"))
+```
+
+
+
+#modified boxplot of half lives
+keeping only one set of experiments for each gfp 
+```{r}
+pup1RFP.halfLives.oneReps <-  aic.df.allreps %>% 
+  filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3")) %>% 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  mutate(colony = case_when(degron == "stable.3" & colony == "Replicate 7"~ "Replicate 4",
+                            degron == "stable.3" & colony == "Replicate 8"~ "Replicate 5",
+                            degron == "stable.3" & colony == "Replicate 9"~ "Replicate 6",
+                            degron == "cln2.4" & colony == "Replicate 10" ~ "Replicate 4",
+                            degron == "cln2.4" & colony == "Replicate 11" ~ "Replicate 5",
+                            degron == "cln2.4" & colony == "Replicate 12" ~ "Replicate 6",
+                            TRUE ~ colony)) %>%
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "GFP-CLN2",
+                            degron %in% c("mODC.2", "mODC")  ~ "GFP-mODC",
+                            degron %in% c("stable","stable.2","stable.3") ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP")),
+         colony = as.numeric(str_remove(string = colony, pattern = "Replicate ")) ,
+         colony = factor(colony, levels = c(1:12))) %>% 
+  ggplot(.,aes(y = log(2)/dy, x = degron, fill = colony))+
+  geom_boxplot(outlier.size = 0.2, lwd = 0.1)+
+  geom_hline(data = avg.half %>% rename("Median"="degron"), 
+             aes(yintercept = avg.t, linetype = Median), 
+             size = 0.2)+
+  theme_pubr()+
+  scale_fill_brewer(name = "Replicate", palette = "Set2")+
+  ylab("Half-Life [Min.]")+
+  theme(axis.title.x = element_blank(), 
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        text = element_text(size = 6), 
+        legend.position = c(0.4,0.9), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(3 ,"mm"),
+        legend.spacing.y = unit(-0.25, "cm"))+
+  # ylim(0,60)+
+  scale_y_log10()
+
+pup1RFP.halfLives.oneReps
+
+```
+#FOR GRC 2023
+```{r}
+avg.half.grc <- aic.df.allreps %>% 
+  # left_join(.,pup1.cell.attr %>% select(-colony) , by = c("cell.id","degron","red", "treatment", "exp.field")) %>% 
+  filter(degron %in% c("mODC.2","cln2.3","stable.3")) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "yeGFP-CLN2",
+                            degron %in% c("mODC.2", "mODC")  ~ "yeGFP-mODC",
+                            degron %in% c("stable","stable.2","stable.3") ~ "yeGFP"),
+         degron = factor(degron , levels = c("yeGFP-mODC","yeGFP-CLN2","yeGFP")) ,
+         t.half = log(2)/dy, 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta >0) %>% 
+  group_by(degron) %>% 
+  summarise(avg.t = median(t.half))
+
+pup1RFP.halfLives.oneReps.grc <-  aic.df.allreps %>% 
+  filter(degron %in% c("mODC.2","cln2.3","stable.3")) %>% 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  mutate(colony = case_when(degron == "stable.3" & colony == "Replicate 7"~ "Replicate 1",
+                            degron == "stable.3" & colony == "Replicate 8"~ "Replicate 2",
+                            degron == "stable.3" & colony == "Replicate 9"~ "Replicate 3",
+                            degron == "cln2.4" & colony == "Replicate 10" ~ "Replicate 4",
+                            degron == "cln2.4" & colony == "Replicate 11" ~ "Replicate 5",
+                            degron == "cln2.4" & colony == "Replicate 12" ~ "Replicate 6",
+                            TRUE ~ colony)) %>%
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "yeGFP-CLN2",
+                            degron %in% c("mODC.2", "mODC")  ~ "yeGFP-mODC",
+                            degron %in% c("stable","stable.2","stable.3") ~ "yeGFP"),
+         degron = factor(degron , levels = c("yeGFP-mODC","yeGFP-CLN2","yeGFP")),
+         colony = as.numeric(str_remove(string = colony, pattern = "Replicate ")) ,
+         colony = factor(colony, levels = c(1:12))) %>% 
+  ggplot(.,aes(y = log(2)/dy, x = degron, fill = colony))+
+  geom_boxplot(outlier.size = 0.2, lwd = 0.1)+
+  geom_hline(data = avg.half.grc %>% rename("Median"="degron"), 
+             aes(yintercept = avg.t, linetype = Median), 
+             size = 0.2)+
+  theme_pubr()+
+  scale_fill_brewer(name = "Replicate", palette = "Set2")+
+  ylab("Half-life [Min.]")+
+  theme(axis.title.x = element_blank(), 
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        text = element_text(size = 6), 
+        legend.position = c(0.4,0.9), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(3 ,"mm"),
+        legend.spacing.y = unit(-0.25, "cm"))+
+  # ylim(0,60)+
+  scale_y_log10()
+
+pup1RFP.halfLives.oneReps.grc
+ggsave(plot = pup1RFP.halfLives.oneReps.grc, filename = "pup1RFP_halfLife.png", path = "~/plots/paper1/figures/fig_1/GRC/", width = 7, height = 4)
+
+```
+
+
+#modified fig 1d with all the reps
+```{r}
+pup1RFP.halfLives.allreps <- aic.df.allreps %>%  
+  # left_join(.,pup1.cell.attr , by = c("cell.id","degron","red", "treatment")) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "GFP-CLN2",
+                            degron %in% c("mODC.2", "mODC")  ~ "GFP-mODC",
+                            degron %in% c("stable","stable.2","stable.3") ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP")),
+         colony = as.numeric(str_remove(string = colony, pattern = "Replicate ")) ,
+         colony = factor(colony, levels = c(1:12))) %>% 
+  filter(ifelse(degron == "GFP", gfp.mean.bg.af.sub.new > 1000 , gfp.mean.bg.af.sub.new > 0 )) %>% 
+  ggplot(.,aes(y = log(2)/dy, x = degron, fill = colony))+
+  geom_hline(data = avg.half, aes(yintercept = avg.t, linetype = degron))+
+  geom_boxplot( outlier.size = 0.5)+
+  # geom_jitter(position = position_jitterdodge(jitter.height = 0, jitter.width = 0.1), size = 0.2, alpha = 0.2)+
+  theme_pubr()+
+  # scale_fill_brewer(name = "Replicate", palette = "Set2")+
+  ylab("Half-Life [Min.]")+
+  theme(axis.title.x = element_blank(), 
+        text = element_text(size = 6), 
+        legend.position = c(0.4, 0.8), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(3 ,"mm"),
+        legend.spacing.y = unit(-0.25, "cm"))
+
+
+pup1RFP.halfLives.allreps
+```
+
+##dist of half lives with dy.dm model for mODC and exponential model for stable and cln2
+```{r}
+pup1RFP.halfLives.allreps.all <- aic.df.allreps.all %>%  
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2") ~ "GFP-CLN2",
+                            degron %in% c("mODC.2", "mODC")  ~ "GFP-mODC",
+                            degron %in% c("stable","stable.2") ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP")), 
+         colony = str_remove(string = colony, pattern = "Replicate ")) %>%
+  ggplot(.,aes(y = log(2)/dy, x = degron, fill = colony))+
+  geom_hline(data = avg.half.all, aes(yintercept = avg.t, linetype = degron))+
+  geom_boxplot( outlier.size = 0.5)+
+  # geom_jitter(position = position_jitterdodge(jitter.height = 0, jitter.width = 0.1), size = 0.2, alpha = 0.2)+
+  theme_pubr()+
+  scale_fill_brewer(name = "Replicate", palette = "Set2")+
+  ylab("Half-Life [Min.]")+
+  theme(axis.title.x = element_blank(), 
+        text = element_text(size = 8), 
+        legend.position = c(0.5, 0.9), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(4 ,"mm"))
+
+pup1RFP.halfLives.allreps.all
+```
+
+
+#cv of t.half
+calculating the cv and median cv of t.half
+```{r}
+cv.half <-  aic.df.allreps %>% 
+  filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3")) %>% 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  mutate(colony = case_when(degron == "stable.3" & colony == "Replicate 7"~ "Replicate 4",
+                            degron == "stable.3" & colony == "Replicate 8"~ "Replicate 5",
+                            degron == "stable.3" & colony == "Replicate 9"~ "Replicate 6",
+                            degron == "cln2.4" & colony == "Replicate 10" ~ "Replicate 4",
+                            degron == "cln2.4" & colony == "Replicate 11" ~ "Replicate 5",
+                            degron == "cln2.4" & colony == "Replicate 12" ~ "Replicate 6",
+                            TRUE ~ colony)) %>%
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "GFP-CLN2",
+                            degron %in% c("mODC.2", "mODC")  ~ "GFP-mODC",
+                            degron %in% c("stable","stable.2","stable.3") ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP")),
+         colony = as.numeric(str_remove(string = colony, pattern = "Replicate ")), 
+         t.half = log(2)/dy) %>% 
+  group_by(degron,colony) %>% 
+  summarise(dy.avg = mean(dy), 
+            dy.std = sd(dy), 
+            t.half.avg = median(t.half), 
+            t.half.std = sd(t.half) ,
+            t.half.max = max(t.half), 
+            t.half.min = min(t.half), 
+            cv.half = sd(t.half)/mean(t.half), 
+            cv2.half = var(t.half)/mean(t.half), 
+            no.cells = NROW(dy), 
+            range.half = t.half.max/t.half.min) %>% 
+   mutate_if(is.numeric, ~round(.,digits = 2))
+
+#median between all the replicates
+cv.half.median <- cv.half %>% 
+  ungroup() %>% 
+  group_by(degron) %>% 
+  summarise(cv.half = median(cv.half))
+  
+```
+plotting
+```{r}
+cvtHalf.plt <- cv.half %>% 
+  ggplot(.,aes(y = cv.half, x = degron, color = factor(colony, levels = c(1:12))))+
+  geom_point(position = position_jitter(seed = 1, width = 0.1), size = 0.5)+
+  # geom_jitter(width = 0.1, size = 0.5, seed = 1)+
+  geom_crossbar(data=cv.half.median, aes(ymin = cv.half, ymax = cv.half),
+                  size=0.1, col="black", width = .25)+
+  theme_pubr()+
+  scale_color_brewer(name = "Replicate", palette = "Set2", guide = "none")+
+  ylab("C.V. in Half-Life")+
+  theme(axis.title.x = element_blank(), 
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        text = element_text(size = 6), 
+        legend.position = c(0.4,0.9), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(3 ,"mm"),
+        legend.spacing.y = unit(-0.25, "cm"))+
+  ylim(0.15,0.4)
+
+cvtHalf.plt
+```
+
+
+#FOR GRC 2023
+only kept three replicates
+```{r}
+cv.half.grc <-  aic.df.allreps %>% 
+  filter(degron %in% c("mODC.2","cln2.3","stable.3")) %>% 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  mutate(colony = case_when(degron == "stable.3" & colony == "Replicate 7"~ "Replicate 1",
+                            degron == "stable.3" & colony == "Replicate 8"~ "Replicate 2",
+                            degron == "stable.3" & colony == "Replicate 9"~ "Replicate 3",
+                            degron == "cln2.4" & colony == "Replicate 10" ~ "Replicate 4",
+                            degron == "cln2.4" & colony == "Replicate 11" ~ "Replicate 5",
+                            degron == "cln2.4" & colony == "Replicate 12" ~ "Replicate 6",
+                            TRUE ~ colony)) %>%
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "yeGFP-CLN2",
+                            degron %in% c("mODC.2", "mODC")  ~ "yeGFP-mODC",
+                            degron %in% c("stable","stable.2","stable.3") ~ "yeGFP"),
+         degron = factor(degron , levels = c("yeGFP-mODC","yeGFP-CLN2","yeGFP")),
+         colony = as.numeric(str_remove(string = colony, pattern = "Replicate ")), 
+         t.half = log(2)/dy) %>% 
+  group_by(degron,colony) %>% 
+  summarise(dy.avg = mean(dy), 
+            dy.std = sd(dy), 
+            t.half.avg = median(t.half), 
+            t.half.std = sd(t.half) ,
+            t.half.max = max(t.half), 
+            t.half.min = min(t.half), 
+            cv.half = sd(t.half)/mean(t.half), 
+            cv2.half = var(t.half)/mean(t.half), 
+            no.cells = NROW(dy), 
+            range.half = t.half.max/t.half.min) %>% 
+   mutate_if(is.numeric, ~round(.,digits = 2))
+
+#median between all the replicates
+cv.half.median.grc <- cv.half.grc %>% 
+  ungroup() %>% 
+  group_by(degron) %>% 
+  summarise(cv.half = median(cv.half))
+
+cvtHalf.plt.grc <- cv.half.grc %>% 
+  ggplot(.,aes(y = cv.half, x = degron, fill = factor(colony, levels = c(1:12))))+
+  geom_col(width = 0.4, position = "dodge")+
+  # geom_point(position = position_jitter(seed = 1, width = 0.1), size = 0.5)+
+  # geom_jitter(width = 0.1, size = 0.5, seed = 1)+
+  # geom_crossbar(data=cv.half.median, aes(ymin = cv.half, ymax = cv.half),
+                  # size=0.1, col="black", width = .25)+
+  theme_pubr()+
+  scale_fill_brewer(name = "Replicate", palette = "Set2", guide = "none")+
+  ylab("Noise in \nHalf-Lives [C.V]")+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 5))+
+  theme(axis.title.x = element_blank(), 
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        text = element_text(size = 6), 
+        legend.position = c(0.4,0.9), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(3 ,"mm"),
+        legend.spacing.y = unit(-0.25, "cm"))+
+  ylim(0,0.4)
+
+cvtHalf.plt.grc
+ggsave(plot = cvtHalf.plt.grc, filename = "cv_halfLife.png", path = "~/plots/paper1/figures/fig_1/GRC/", width = 5, height = 3)
+```
+
+gfp int cv
+```{r}
+cv.gfp.grc <-  aic.df.allreps %>% 
+  filter(degron %in% c("mODC.2","cln2.3","stable.3")) %>% 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  mutate(colony = case_when(degron == "stable.3" & colony == "Replicate 7"~ "Replicate 1",
+                            degron == "stable.3" & colony == "Replicate 8"~ "Replicate 2",
+                            degron == "stable.3" & colony == "Replicate 9"~ "Replicate 3",
+                            degron == "cln2.4" & colony == "Replicate 10" ~ "Replicate 4",
+                            degron == "cln2.4" & colony == "Replicate 11" ~ "Replicate 5",
+                            degron == "cln2.4" & colony == "Replicate 12" ~ "Replicate 6",
+                            TRUE ~ colony)) %>%
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "yeGFP-CLN2",
+                            degron %in% c("mODC.2", "mODC")  ~ "yeGFP-mODC",
+                            degron %in% c("stable","stable.2","stable.3") ~ "yeGFP"),
+         degron = factor(degron , levels = c("yeGFP-mODC","yeGFP-CLN2","yeGFP")),
+         colony = as.numeric(str_remove(string = colony, pattern = "Replicate ")), 
+         t.half = log(2)/dy) %>% 
+  group_by(degron,colony) %>% 
+  summarise(gfp.avg = mean(gfp.mean.bg.af.sub.new), 
+            gfp.std = sd(gfp.mean.bg.af.sub.new), 
+            gfp.max = max(gfp.mean.bg.af.sub.new), 
+            gfp.min = min(gfp.mean.bg.af.sub.new), 
+            cv.gfp = sd(gfp.mean.bg.af.sub.new)/mean(gfp.mean.bg.af.sub.new), 
+            cv2.gfp = var(gfp.mean.bg.af.sub.new)/mean(gfp.mean.bg.af.sub.new), 
+            no.cells = NROW(dy)) %>% 
+   mutate_if(is.numeric, ~round(.,digits = 2))
+
+
+
+cvGFP.plt.grc <- cv.gfp.grc %>% 
+  ggplot(.,aes(y = cv2.gfp, x = degron, fill = factor(colony, levels = c(1:12))))+
+  geom_col(width = 0.4, position = "dodge")+
+  # geom_point(position = position_jitter(seed = 1, width = 0.1), size = 0.5)+
+  # geom_jitter(width = 0.1, size = 0.5, seed = 1)+
+  # geom_crossbar(data=cv.half.median, aes(ymin = cv.half, ymax = cv.half),
+                  # size=0.1, col="black", width = .25)+
+  theme_pubr()+
+  scale_fill_brewer(name = "Replicate", palette = "Set2", guide = "none")+
+  ylab("Noise in \nGFP Intensity [C.V]")+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 5))+
+  theme(axis.title.x = element_blank(), 
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        text = element_text(size = 6), #changed from 12 to 8 for paper
+        legend.position = c(0.4,0.9), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(3 ,"mm"),
+        legend.spacing.y = unit(-0.25, "cm"))
+
+cvGFP.plt.grc
+ggsave(plot = cvGFP.plt.grc, filename = "cv_GFP.png", path = "~/plots/paper1/figures/fig_1/GRC/", width = 5, height = 3)
+```
+
+
+
+#ggridges
+```{r}
+library(ggridges)
+```
+
+median gfp intensity
+```{r}
+gfp.med <- all.exp.list %>% 
+  filter(red == "pup1-rfp", treatment == "none", degron != "cln2.2") %>%
+  filter(degron %in% c("cln2.3","mODC.2","stable.3")) %>% 
+  filter(image.no < 32) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2") ~ "GFP-CLN2",
+                            degron %in% c("mODC.2", "mODC")  ~ "GFP-mODC",
+                            degron %in% c("stable","stable.2","stable.3") ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP")),
+         image.no = factor(image.no, levels = c(31:1))) %>%
+  filter(image.no == 1) %>% 
+  group_by(degron) %>% 
+  summarise(med.gfp = median(gfpMeanBgAFsub))%>% 
+  ungroup()
+```
+
+ggridges plot
+```{r fig.height= 4, fig.width= 2.5}
+
+gfpIntGGRid <- all.exp.list %>% 
+  filter(red == "pup1-rfp", treatment == "none", degron != "cln2.2") %>% 
+  left_join(.,pup1.cell.attr , by = c("cell.id","degron","red", "treatment","exp.field")) %>% 
+  # filter(degron %in% c("mODC.2","cln2.4","cln2.3","stable.2","stable.3")) %>% 
+  filter(degron %in% c("mODC.2","cln2.3","stable.3")) %>% 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0, image.no < 32) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2", "cln2.4") ~ "yeGFP-CLN2",
+                            degron %in% c("mODC.2", "mODC")  ~ "yeGFP-mODC",
+                            degron %in% c("stable","stable.2","stable.3") ~ "yeGFP"),
+         degron = factor(degron , levels = c("yeGFP-mODC","yeGFP-CLN2","yeGFP"))) %>% 
+  group_by(cell.id) %>% 
+  mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  filter(image.no > 1) %>% 
+  ggplot(.,aes(x = I0_It, y = factor(image.no, levels = c(31:2)) ,fill = degron, color = degron))+
+  stat_density_ridges(geom = "density_ridges_gradient" , 
+                      quantiles = 2, 
+                      quantile_lines = TRUE , 
+                      aes(height = ..ndensity..), 
+                      rel_min_height = 0.01, 
+                      size = 0.1) +
+  scale_fill_manual(values = alpha(c("indianred2","khaki3","deepskyblue2"), 0.8), name = NULL)+
+  scale_color_manual(values = c("indianred4","khaki4","deepskyblue4"), name = NULL)+
+  theme_ridges(line_size = 0.3)+
+  theme_pubr()+
+  theme(text = element_text(size = 6), 
+        legend.background = element_blank(),
+        legend.direction = "horizontal",
+        legend.position = c(0.3,factor(2, levels = 2)),
+        legend.key.size = unit(2 ,"mm"),
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2))+
+  # scale_x_log10(labels = scales::trans_format("log10", scales::math_format(10^.x)))+
+  ylab("Time")+
+  # xlab()+
+  # xlim(0,1.1)+
+  scale_x_continuous(breaks = seq(0,1,by = 0.25), name = "Normalized GFP Mean Intensity [A.U]", limits = c(-0.1,1.1))+
+  labs(title = "A")
+
+gfpIntGGRid
+```
+
+
+Figure 1: would be just the methods and model
+```{r}
+fig1.methods <- (wrap_elements(grid::textGrob('methods cartoon'))|wrap_elements(grid::textGrob('Model')))+
+  plot_layout(widths = c(0.7,0.3))+
+  plot_annotation(tag_levels = "A")
+
+fig1.methods
+```
+
+```{r}
+ggsave(plot = fig1.methods, path = "~/plots/paper1/figures/fig_1/", filename = "methods.pdf", width = 6, height = 5 )
+ggsave(plot = fig1.methods, path = "~/plots/paper1/figures/fig_1/", filename = "methods.png", width = 6, height = 5)
+```
+
+#fig 2: with only three replicates for each
+```{r}
+right.sec <- (GFPtrace.pup1Rep2022/pup1RFP.halfLives.oneReps.grc/(cvtHalf.plt.grc|cvGFP.plt.grc))+
+  plot_layout(heights = c(0.3,0.7,0.6))
+
+# left.sec <- (top.sec.1/mid.sec)+
+#   plot_layout(heights = c(0.6,0.4))
+
+left.sec <- gfpIntGGRid
+
+
+figGFP.timelapse <-  (left.sec|right.sec)+ 
+  plot_layout(widths = c(0.4,0.6))+
+  plot_annotation(tag_levels = "A")
+
+figGFP.timelapse
+```
+
+#Figure 2:old
+#putting the figures together
+
+```{r fig.height= 3, fig.width= 4}
+# top.sec.1 <- (wrap_elements(grid::textGrob('methods cartoon'))|wrap_elements(grid::textGrob('Model')))+
+#   plot_layout(widths = c(0.7,0.3))
+
+right.sec <- (GFPtrace.pup1Rep2022/pup1RFP.halfLives.oneReps/cvtHalf.plt)+
+  plot_layout(heights = c(0.3,0.7,0.3))
+
+# left.sec <- (top.sec.1/mid.sec)+
+#   plot_layout(heights = c(0.6,0.4))
+
+left.sec <- gfpIntGGRid
+
+
+figGFP.timelapse <-  (left.sec|right.sec)+ 
+  plot_layout(widths = c(0.4,0.6))+
+  plot_annotation(tag_levels = "A")
+
+figGFP.timelapse
+```
+
+
+
+```{r}
+ggsave(plot = figGFP.timelapse, path = "~/plots/paper1/figures/fig_1/", filename = "figGFP_Timelapse.pdf", width = 6, height = 5 )
+ggsave(plot = figGFP.timelapse, path = "~/plots/paper1/figures/fig_1/", filename = "figGFP_Timelapse.png", width = 6, height = 5)
+```
+
+```{r}
+ggsave(plot = gfpIntGGRid, path = "~/plots/paper1/figures/fig_1/", filename = "gfpggrid.png", width = 2.5, height = 4)
+```
+
+#protein inhibition experiment
+
+proteasome inhibition experiments
+```{r}
+protInhi.attr <- read_csv("~/plots/all_data/all_mg135_attr.csv") %>% 
+  rename("cell.id" = "unique.trackID") %>% 
+  filter(timepoint == 1) %>% 
+  mutate(cell.id = paste0(cell.id ,"_",degron,"_",red,"_",treatment)) %>% 
+  mutate(exp.field = paste0(str_split(cell.id, "_", simplify = T)[,2],"_",
+                            str_split(cell.id, "_", simplify = T)[,3]),
+    colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8" , "20min_s9") ~ "Replicate 3"))
+
+multiple.proInh <- protInhi.attr %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  group_by(cell.id) %>% 
+  tally() %>% 
+  filter(n>1)
+
+protInhi.attr <- protInhi.attr %>% 
+  group_by(cell.id) %>% 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(cell.id %in% multiple.proInh$cell.id , mean(rfp.mean.bg.sub.puncta), rfp.mean.bg.sub.puncta),
+         rfp.sum.bg.sub.puncta = ifelse(cell.id %in% multiple.proInh$cell.id, sum(rfp.mean.bg.sub.puncta), rfp.sum.bg.sub.puncta)) %>% 
+    distinct(cell.id, .keep_all = TRUE)  
+  
+
+```
+
+##Adding the protein inhibition experiment data
+```{r}
+pup1.proInhi.attr <- pup1.cell.attr %>% 
+  bind_rows(.,protInhi.attr %>% 
+              dplyr::select(-time, 
+                            -timepoint,
+                            -image.no, 
+                            -ln.gfp, 
+                            -ln.gfp.dif,
+                            -trackID,
+                            -gfp.intensity.center,
+                            -gfp.int.mean,
+                            -gfp.int.median,
+                           -gfp.int.sum,
+                           -no.of.triangles,
+                           -field,
+                           -time.dif.gfp,
+                           -real.time.gfp,
+                           -sample,
+                           -avg.gfp.bg,
+                           -Min_gfp,
+                           -gfp.mean.bg.sub,
+                           -value,
+                           -t80,
+                           -t95,
+                           -threshold,
+                           -threshold_95,
+                           -gfp.mean.bg.af.sub,
+                           -threshold_80,
+                           -Mean_gfp,
+                           -image,
+                           -experiment,
+                           -gfp.sum.bg.sub))
+```
+
+##ggrides
+###with 1uM, 2.5uM and 5uM MG132
+```{r}
+ggRigd.PrtIng <- all.exp.list %>% 
+  filter(red == "pup1-rfp") %>% 
+  filter(!(treatment %in% c("none","dmso1","50uM"))) %>% 
+  left_join(.,pup1.proInhi.attr , by = c("cell.id","degron","red", "treatment","exp.field")) %>% 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0, image.no < 32) %>%
+  filter(!(treatment == "50uM" & image.no == 3)) %>% 
+  mutate(degron = case_when(degron == "mODC"  ~ "yeGFP-mODC"),
+         treatment = case_when(treatment %in% c("dmso1","dmso2") ~ "DMSO",
+                            TRUE ~ treatment),
+         treatment = factor(treatment , levels = c("DMSO","1uM","2.5uM","5uM","50uM"))) %>% 
+  group_by(cell.id) %>% 
+  mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  filter(image.no > 1) %>% 
+  ggplot(.,aes(x = I0_It, y = factor(image.no, levels = c(31:2)) ,fill = treatment, color = treatment))+
+  stat_density_ridges(geom = "density_ridges_gradient" , 
+                      quantiles = 2, 
+                      quantile_lines = TRUE , 
+                      aes(height = ..ndensity..), 
+                      rel_min_height = 0.01, 
+                      size = 0.2) +
+  scale_fill_manual(values = alpha(c("indianred2","lightskyblue2","dodgerblue", "royalblue2"), 0.8), name = NULL)+
+  scale_color_manual(values = c("indianred4","lightskyblue4","dodgerblue4","royalblue4"), name = NULL)+
+  theme_ridges(line_size = 0.3)+
+  theme_pubr()+
+  theme(text = element_text(size = 6), 
+        legend.background = element_blank(),
+        legend.direction = "horizontal",
+        legend.position = c(0.3,factor(2, levels = 2)),
+        legend.key.size = unit(2 ,"mm"),
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2))+
+  # scale_x_log10(labels = scales::trans_format("log10", scales::math_format(10^.x)))+
+  ylab("Time")+
+  # xlab()+
+  # xlim(0,1.1)+
+  scale_x_continuous(breaks = seq(0,1,by = 0.25), name = "Normalized GFP Mean Intensity [A.U]", limits = c(-0.1,1.1)) 
+
+ggRigd.PrtIng
+```
+
+```{r}
+ggsave(plot = ggRigd.PrtIng, path = "~/plots/paper1/figures/", filename = "ggRidg_prtInh.png", width = 2.5, height = 4)
+ggsave(plot = ggRigd.PrtIng, path = "~/plots/paper1/figures/", filename = "ggRidg_prtInh.pdf", width = 2.5, height = 4)
+```
+###with 50uM
+```{r}
+ggRigd.PrtIng.2 <- all.exp.list %>% 
+  filter(red == "pup1-rfp") %>% 
+  filter(treatment %in% c("dmso1","50uM")) %>% 
+  left_join(.,pup1.proInhi.attr , by = c("cell.id","degron","red", "treatment","exp.field")) %>% 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0, image.no < 32) %>%
+  filter(!(treatment == "50uM" & image.no == 3)) %>% 
+  mutate(degron = case_when(degron == "mODC"  ~ "yeGFP-mODC"),
+         treatment = case_when(treatment %in% c("dmso1","dmso2") ~ "DMSO",
+                            TRUE ~ treatment),
+         treatment = factor(treatment , levels = c("DMSO","1uM","2.5uM","5uM","50uM"))) %>% 
+  group_by(cell.id) %>% 
+  mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  filter(image.no > 1) %>% 
+  ggplot(.,aes(x = I0_It, y = factor(image.no, levels = c(31:2)) ,fill = treatment, color = treatment))+
+  stat_density_ridges(geom = "density_ridges_gradient" , 
+                      quantiles = 2, 
+                      quantile_lines = TRUE , 
+                      aes(height = ..ndensity..), 
+                      rel_min_height = 0.01, 
+                      size = 0.2) +
+  scale_fill_manual(values = alpha(c("indianred2","royalblue2"), 0.8), name = NULL)+
+  scale_color_manual(values = c("indianred4","royalblue4"), name = NULL)+
+  theme_ridges(line_size = 0.3)+
+  theme_pubr()+
+  theme(text = element_text(size = 6), 
+        legend.background = element_blank(),
+        legend.direction = "horizontal",
+        legend.position = c(0.3,factor(2, levels = 2)),
+        legend.key.size = unit(2 ,"mm"),
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2))+
+  # scale_x_log10(labels = scales::trans_format("log10", scales::math_format(10^.x)))+
+  ylab("Time")+
+  # xlab()+
+  # xlim(0,1.1)+
+  scale_x_continuous(breaks = seq(0,1,by = 0.25), name = "Normalized GFP Mean Intensity [A.U]", limits = c(-0.1,1.1)) 
+
+ggRigd.PrtIng.2
+```
+```{r}
+ggsave(plot = ggRigd.PrtIng.2, path = "~/plots/paper1/figures/", filename = "ggRidg_prtInh_50uM.png", width = 2.5, height = 4)
+ggsave(plot = ggRigd.PrtIng.2, path = "~/plots/paper1/figures/", filename = "ggRidg_prtInh_50uM.pdf", width = 2.5, height = 4)
+```
+##half life
+```{r}
+aic.PrtIn <- aic.df %>% 
+  filter(red == "pup1-rfp", treatment != "none") %>% 
+  filter(dy > 0.005 & dy < 0.5) %>% 
+  group_by(cell.id) %>% 
+  filter(model == "dy.dm", dm > 0.000015) %>% 
+  left_join(., protInhi.attr, by = c("cell.id","degron","red", "treatment", "exp.field","colony")) 
+```
+##dist of half lives
+```{r}
+avg.half.prtIn <- aic.PrtIn %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "yeGFP-CLN2",
+                            degron %in% c("mODC.2", "mODC")  ~ "yeGFP-mODC",
+                            degron %in% c("stable","stable.2","stable.3") ~ "yeGFP"),
+         treatment = factor(treatment , levels = c("dmso1","dmso2","1uM","2.5uM","5uM","50uM")) ,
+         t.half = log(2)/dy, 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta >0) %>% 
+  group_by(treatment) %>% 
+  summarise(avg.t = median(t.half),
+            no.cell = NROW(t.half))
+
+my_comp <- list(c("dmso2","1uM"), c("dmso2","2.5uM"),
+                c("dmso2","5uM"),c("1uM","2.5uM"),
+                c("1uM","5uM"), c("2.5uM","5uM"))
+
+hl.box.prtIn <-  aic.PrtIn %>% 
+  filter(!(treatment %in% c("dmso1","50uM"))) %>% 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0)  %>%
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "yeGFP-CLN2",
+                            degron %in% c("mODC.2", "mODC")  ~ "yeGFP-mODC",
+                            degron %in% c("stable","stable.2","stable.3") ~ "yeGFP"),
+         treatment = case_when(treatment %in% c("dmso1","dmso2") ~ "DMSO", 
+                               TRUE ~ treatment),
+         treatment = factor(treatment , levels = c("DMSO","1uM","2.5uM","5uM","50uM")),
+         colony = as.numeric(str_remove(string = colony, pattern = "Replicate ")) ,
+         colony = factor(colony, levels = c(1:12))) %>% 
+  ggplot(.,aes(y = log(2)/dy, x = treatment, fill = treatment))+
+  geom_boxplot(outlier.size = 0.2, lwd = 0.1)+
+  geom_hline(data = avg.half.prtIn %>% 
+               filter(!(treatment %in% c("dmso1","50uM"))) %>% 
+               mutate(treatment = case_when(as.character(treatment) %in% c("dmso1","dmso2") ~ "DMSO",
+                               TRUE ~ as.character(treatment)),
+                      treatment = factor(treatment , levels = c("DMSO","1uM","2.5uM","5uM","50uM"))) %>% 
+               rename("Median"="treatment"), 
+             aes(yintercept = avg.t, linetype = Median), 
+             size = 0.2)+
+  theme_pubr()+
+  scale_fill_manual(values = alpha(c("indianred2","lightskyblue2","dodgerblue", "royalblue2"), 0.8), name = NULL)+
+  ylab("Half-life [Min.]")+
+  theme(axis.title.x = element_blank(), 
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        text = element_text(size = 6), 
+        legend.position = c(0.2,0.9), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(3 ,"mm"),
+        legend.spacing.y = unit(-0.25, "cm"))+
+  stat_compare_means(method = "t.test", size =2)
+
+hl.box.prtIn
+```
+```{r}
+aic.PrtIn %>% 
+  filter(!(treatment %in% c("dmso1","50uM"))) %>% 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0)  %>%
+  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "yeGFP-CLN2",
+                            degron %in% c("mODC.2", "mODC")  ~ "yeGFP-mODC",
+                            degron %in% c("stable","stable.2","stable.3") ~ "yeGFP"),
+         treatment = case_when(treatment %in% c("dmso1","dmso2") ~ "DMSO", 
+                               TRUE ~ treatment),
+         treatment = factor(treatment , levels = c("DMSO","1uM","2.5uM","5uM","50uM")),
+         colony = as.numeric(str_remove(string = colony, pattern = "Replicate ")) ,
+         colony = factor(colony, levels = c(1:12))) %>% 
+  ggplot(.,aes(y = gfp.mean.bg.af.sub.new, x = treatment, fill = treatment))+
+  geom_boxplot(outlier.size = 0.2, lwd = 0.1)+
+  # geom_hline(data = avg.half.prtIn %>% 
+  #              filter(!(treatment %in% c("dmso1","50uM"))) %>% 
+  #              mutate(treatment = case_when(as.character(treatment) %in% c("dmso1","dmso2") ~ "DMSO",
+  #                              TRUE ~ as.character(treatment)),
+  #                     treatment = factor(treatment , levels = c("DMSO","1uM","2.5uM","5uM","50uM"))) %>% 
+  #              rename("Median"="treatment"), 
+  #            aes(yintercept = avg.t, linetype = Median), 
+  #            size = 0.2)+
+  theme_pubr()+
+  scale_fill_manual(values = alpha(c("indianred2","lightskyblue2","dodgerblue", "royalblue2"), 0.8), name = NULL)+
+  ylab("GFP intensity [A.U]")+
+  theme(axis.title.x = element_blank(), 
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        text = element_text(size = 6), 
+        legend.position = c(0.2,0.9), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(3 ,"mm"),
+        legend.spacing.y = unit(-0.25, "cm"))+
+  stat_compare_means(size = 2)
+```
+
+##CV in gfp
+```{r}
+cv.gfp.PrtIn <- aic.PrtIn %>% 
+  group_by(treatment, colony) %>% 
+  dplyr::select(dy,gfp.mean.bg.af.sub.new, treatment,colony) %>% 
+  na.omit() %>% 
+  summarise(gfp.avg = mean(gfp.mean.bg.af.sub.new), 
+            gfp.std = sd(gfp.mean.bg.af.sub.new), 
+            gfp.max = max(gfp.mean.bg.af.sub.new), 
+            gfp.min = min(gfp.mean.bg.af.sub.new), 
+            cv.gfp = sd(gfp.mean.bg.af.sub.new)/mean(gfp.mean.bg.af.sub.new), 
+            cv2.gfp = (sd(gfp.mean.bg.af.sub.new))^2/mean(gfp.mean.bg.af.sub.new), 
+            no.cells = NROW(dy)) %>% 
+   mutate_if(is.numeric, ~round(.,digits = 2))
+```
+
+##cv in t-half
+```{r}
+cv.thalf.PrtIn <- aic.PrtIn %>% 
+  # filter(ifelse(treatment %in% c("5uM", "2.5uM"), dy > 0.005, dy < 0.5)) %>% 
+  dplyr::select(dy,gfp.mean.bg.af.sub.new, treatment, colony) %>% 
+  na.omit() %>% 
+  ungroup() %>% 
+  mutate(t.half = log(2)/dy, 
+         colony = as.numeric(str_split(colony, "\ ", simplify = T)[,2])) %>% 
+  group_by(treatment, colony) %>% 
+  summarise(dy.avg = mean(dy), 
+            dy.std = sd(dy), 
+            t.half.avg = mean(t.half), 
+            t.half.std = sd(t.half) ,
+            t.half.max = max(t.half), 
+            t.half.min = min(t.half), 
+            cv.half = sd(t.half)/mean(t.half), 
+            cv2.half = var(t.half)/mean(t.half), 
+            no.cells = NROW(dy), 
+            range.half = t.half.max/t.half.min) %>% 
+   mutate_if(is.numeric, ~round(.,digits = 2))
+```
+```{r}
+log(2)/0.005
+```
+
+```{r}
+cv.thalf.PrtIn %>% 
+  filter(!(treatment %in% c("dmso1","50uM"))) %>% 
+  ggplot(.,aes(y = cv.half, 
+               x = factor(treatment, levels = c("dmso1","dmso2","1uM","2.5uM","5uM","50uM"))))+
+  geom_col(width = 0.2, position = "dodge")+
+  scale_fill_brewer(name = "Replicate", palette = "Set2", guide = "none")+
+  ylab("Noise in \nHalf-Lives [C.V]")+
+  theme_pubr()+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 5))+
+  theme(axis.title.x = element_blank(), 
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        text = element_text(size = 6), 
+        legend.position = c(0.4,0.9), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(3 ,"mm"),
+        legend.spacing.y = unit(-0.25, "cm"))
+```
+```{r}
+cv.gfp.PrtIn %>% 
+  ggplot(.,aes(y = cv.gfp, x = factor(treatment, levels = c("dmso1","dmso2","1uM","2.5uM","5uM","50uM"))))+
+  geom_col(width = 0.4, position = "dodge")+
+  theme_pubr()+
+  scale_fill_brewer(name = "Replicate", palette = "Set2", guide = "none")+
+  ylab("Noise in \nGFP intensities [C.V]")+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 5))+
+  theme(axis.title.x = element_blank(), 
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        text = element_text(size = 6), 
+        legend.position = c(0.4,0.9), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(3 ,"mm"),
+        legend.spacing.y = unit(-0.25, "cm"))
+```
+
+```{r}
+aic.PrtIn %>% 
+  dplyr::select(dy,gfp.mean.bg.af.sub.new, treatment, colony) %>% 
+  na.omit() %>% 
+  ungroup() %>% 
+  mutate(t.half = log(2)/dy, 
+         colony = as.numeric(str_split(colony, "\ ", simplify = T)[,2])) %>% 
+  ggplot(.,aes(x = t.half, fill = treatment))+
+  geom_density(alpha = 0.5)+
+  theme_pubr()
+```
+
+
+

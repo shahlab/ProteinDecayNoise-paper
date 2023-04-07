@@ -1,0 +1,572 @@
+---
+title: "figure 1"
+output: pdf
+---
+
+fig1a: methods cartoon
+fig1b: model 
+fig1c: single cell gfp profile from each GFP
+
+Libraries to load
+```{r}
+library(data.table)
+library(tidyverse)
+library(reshape2)
+library(gganimate)
+library(ggridges)
+library(ggpubr)
+library(patchwork)
+```
+
+load the gfp timelapse used for the mechanistic model
+```{r}
+all.exp.list <- read_csv("~/plots/all_data/all_exp_data.csv")
+
+aic.df <- read_csv("~/plots/all_data/aic.csv")
+
+```
+
+Cellular attributes
+```{r}
+pup1.cell.attr <- read_csv("~/plots/all_data/all_pup1_cell_attr.csv")
+```
+
+#pup1-RFP background
+```{r}
+pup1.cell.attr <- pup1.cell.attr %>% 
+  mutate(exp.field = paste0(str_split(cell.id, "_", simplify = T)[,2],"_",
+                            str_split(cell.id, "_", simplify = T)[,3]),
+    colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8" , "20min_s9") ~ "Replicate 3"))
+
+pup1.cell.attr <- pup1.cell.attr %>% 
+  mutate(colony = ifelse(degron == "stable" & red == "pup1-rfp", 
+                         case_when(exp.field %in% c("20min_s4", "20min_s5") ~ "Replicate 1",
+                                   exp.field %in% c("20min_s6", "20min_s7") ~ "Replicate 2",
+                                   exp.field %in% c("20min_s8", "20min_s9") ~ "Replicate 3"), colony)) 
+
+#removing the multiple punctas
+multiple.pup1 <- pup1.cell.attr %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% group_by(cell.id) %>% tally() %>% filter(n>1)
+
+#if a cell has no puncta, then make the rfp mean value of puncta == 0 and then remove those cells 
+pup1.cell.attr <-  pup1.cell.attr %>% 
+  group_by(cell.id) %>% 
+  mutate(rfp.mean.bg.sub.puncta = ifelse(cell.id %in% multiple.pup1$cell.id , mean(rfp.mean.bg.sub.puncta), rfp.mean.bg.sub.puncta )) %>% 
+    distinct(cell.id, .keep_all = TRUE) 
+```
+
+
+#add the replicate info 
+```{r}
+
+aic.df <- aic.df %>% 
+  mutate(exp.field = paste0(str_split(cell.id, "_", simplify = T)[,2],"_",
+                            str_split(cell.id, "_", simplify = T)[,3]),
+    colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8" , "20min_s9") ~ "Replicate 3"))
+
+aic.df <- aic.df %>% 
+  mutate(colony = ifelse(degron == "stable" & red == "pup1-rfp", 
+                         case_when(exp.field %in% c("20min_s4", "20min_s5") ~ "Replicate 1",
+                                   exp.field %in% c("20min_s6", "20min_s7") ~ "Replicate 2",
+                                   exp.field %in% c("20min_s8", "20min_s9") ~ "Replicate 3"), colony)) 
+  # filter(value < 0.05)
+  
+```
+
+#combining the cellular atttributes with the parameter estimates
+```{r}
+parms.cell.atttr <- aic.df %>% 
+  filter(red == "pup1-rfp", 
+         treatment == "none", 
+         degron %in% c("cln2.3","mODC.2","stable.3","stable.2","cln2.4")) %>% 
+  left_join(.,pup1.cell.attr, by = c("cell.id", "exp.field","red","treatment","degron","colony")) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0)  %>% 
+  filter(ifelse(degron %in% c("stable.3","stable.2"), dy < 0.1, dy < 0.5))
+```
+
+predicted values function
+```{r}
+dy.dm.f.fn <- function(dy, f, dm, delta.time){
+  pred.gfp <- ((dy * (1 - f) * exp(-dy * delta.time)) / dm) + 
+              exp(-dy * delta.time) +
+              (1 - exp(-dy * delta.time)) * f -
+              ((dy * (1 - f) * exp(-(dy + dm) * delta.time)) / dm)
+  return(pred.gfp)
+}
+
+dy.f.fn <- function(dy,f,delta.time){
+  pred.gfp <-  exp(-dy * delta.time) +(1 - exp(-dy * delta.time)) * f
+  return(pred.gfp)
+}
+  
+exponential.fn <- function(dy, delta.time){
+  pred.gfp <- exp(-dy * delta.time)
+  return(pred.gfp)
+}
+  
+dy.dm.fn <- function(dy, dm, delta.time){
+  pred.gfp <- ((dy  * exp(-dy * delta.time)) / dm) + exp(-dy * delta.time)  -
+              ((dy * 1 * exp(-(dy + dm) * delta.time)) / dm)
+  
+  return(pred.gfp)
+}
+```
+
+##FIG 1c
+```{r}
+fig1c.df <- all.exp.list %>% 
+  mutate(colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8" ) ~ "Replicate 3")) %>% 
+  filter(cell.id %in% c( "1000002011_20min_s3_cln2.3_pup1-rfp_none", 
+                         "1000002178_20min_s6_cln2.3_pup1-rfp_none",
+                         "1000002067_20min_s7_cln2.3_pup1-rfp_none",
+                         "1000001755_20min_s4_mODC.2_pup1-rfp_none",
+                         "1000002114_20min_s6_mODC.2_pup1-rfp_none",
+                         "1000002120_20min_s7_mODC.2_pup1-rfp_none",
+                         "1000001840_20min_s3_stable.2_pup1-rfp_none",
+                         "1000002241_20min_s6_stable.2_pup1-rfp_none",
+                         "1000002306_20min_s8_stable.2_pup1-rfp_none"
+                         )) %>% 
+  left_join(.,aic.df, by = c("cell.id","red","degron","treatment","colony"))
+
+```
+
+```{r}
+fig1c.pred <- fig1c.df %>% 
+  select(cell.id, delta.time, gfpMeanBgAFsub, degron, f, dy, dm, aic, model,colony) %>% 
+  group_by(cell.id) %>% 
+  mutate(pred.value =  case_when(model == "dy.dm.f" ~ dy.dm.f.fn(dy = dy, 
+                                                                dm = dm,
+                                                               f = f,
+                                                               delta.time = delta.time/60) , 
+                               model == "dy.f" ~ dy.f.fn(f = f, 
+                                                         dy = dy, 
+                                                         delta.time = delta.time/60) , 
+                               model == "exponential" ~ exponential.fn(dy = dy, 
+                                                                       delta.time = delta.time/60) , 
+                               model == "dy.dm" ~ dy.dm.fn(dy = dy, 
+                                                           dm = dm, 
+                                                           delta.time = delta.time/60)) , 
+         pred.gfp = gfpMeanBgAFsub[1]*pred.value)
+
+#changing the levels of the degrons so they appeare in a particular order in facet_grid
+fig1c.pred <- fig1c.pred %>% 
+  mutate( degron = case_when(degron == "cln2.3" ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC",
+                            degron == "stable.2" ~ "GFP"), 
+          degron = factor(degron, levels = c("GFP-mODC","GFP-CLN2","GFP")))
+```
+
+```{r}
+aic.df.allreps <- aic.df %>% 
+  filter(red == "pup1-rfp", treatment == "none", 
+         degron %in% c("cln2.3","cln2.2","cln2","cln2.4",
+                       "mODC","mODC.2", 
+                       "stable","stable.2","stable.3") ) %>% 
+  filter(ifelse(degron %in% c( "stable.2", "stable", "stable.3"), dy < 0.1, dy < 0.5)) %>% 
+  group_by(cell.id) %>% 
+  filter(model == "dy.dm", dm > 0.00001) %>% 
+  mutate(colony = case_when(degron == "cln2.2" & colony == "Replicate 1"~ "Replicate 4",
+                            degron == "cln2.2" & colony == "Replicate 2"~ "Replicate 5",
+                            degron == "cln2.2" & colony == "Replicate 3"~ "Replicate 6",
+                            degron == "cln2" & colony == "Replicate 1"~ "Replicate 7",
+                            degron == "cln2" & colony == "Replicate 2"~ "Replicate 8",
+                            degron == "cln2" & colony == "Replicate 3"~ "Replicate 9",
+                            degron == "cln2.4" & colony == "Replicate 1"~ "Replicate 10",
+                            degron == "cln2.4" & colony == "Replicate 2"~ "Replicate 11",
+                            degron == "cln2.4" & colony == "Replicate 3"~ "Replicate 12",
+                            degron == "mODC" & colony == "Replicate 1"~ "Replicate 4",
+                            degron == "mODC" & colony == "Replicate 2"~ "Replicate 5",
+                            degron == "mODC" & colony == "Replicate 3"~ "Replicate 6",
+                            degron == "stable" & colony == "Replicate 1"~ "Replicate 4",
+                            degron == "stable" & colony == "Replicate 2"~ "Replicate 5",
+                            degron == "stable" & colony == "Replicate 3"~ "Replicate 6",
+                            degron == "stable.3" & colony == "Replicate 1"~ "Replicate 7",
+                            degron == "stable.3" & colony == "Replicate 2"~ "Replicate 8",
+                            degron == "stable.3" & colony == "Replicate 3"~ "Replicate 9",
+                            TRUE ~ colony))
+```
+
+Pup1-rfp technical replicate 1
+```{r}
+#get the cells that converged for treatment == none and the experiment with cln2.3, modc.2 and stable.2
+fig1c.aic.df <- aic.df %>% 
+  group_by(cell.id) %>% 
+  filter(model == "dy.dm.f", treatment == "none") %>% 
+  filter(degron %in% c("mODC.2", "cln2.3", "stable.3"))
+
+
+fig1c.allcells.df <- all.exp.list %>% 
+  filter(treatment == "none", degron != "cln2.2") %>% 
+  filter(degron %in% c("mODC.2", "cln2.3", "stable.3") & red == "pup1-rfp") %>% 
+  filter(cell.id %in% fig1c.aic.df$cell.id) #only keeping cells that converged
+  
+
+fig1c.allcells.df <- fig1c.allcells.df %>% 
+  mutate(colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8") ~ "Replicate 3"), 
+         degron = case_when(degron == "cln2.3" ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC",
+                            degron == "stable.2" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP")))
+
+
+```
+
+
+#range of parameter esitmates when you use the dy dm and f model. 
+```{r}
+#range of dy
+aic.df %>% 
+  filter(red == "pup1-rfp", 
+         treatment == "none", 
+         degron %in% c("cln2.3","mODC.2","stable.3","stable.2","cln2.4")) %>% 
+  left_join(.,pup1.cell.attr, by = c("cell.id", "exp.field","red","treatment","degron","colony")) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0) %>% 
+  filter(ifelse(degron == "stable.3", dy < 0.1, dy < 0.5)) %>% 
+  group_by(cell.id) %>% 
+  filter( model == "dy.dm.f", 
+          dm > 0.000015) %>% 
+   # mutate(degron = case_when(degron %in% c("cln2","cln2.3") ~ "GFP-CLN2",
+   #                          degron %in% c("mODC","mODC.2") ~ "GFP-mODC",
+   #                          degron %in% c("stable","stable.3") ~ "GFP"),
+   #       degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP"))) %>% 
+  group_by(degron, red, colony)  %>% 
+  # filter(value < 0.05) %>% 
+  mutate(t.half = log(2)/dy) %>% 
+  summarise(mean.dy = mean(dy)%>% round(.,digits = 2), 
+            median.dy = median(dy)%>% round(.,digits = 2),
+            std.dy = sd(dy) %>% round(.,digits = 2),
+            min.dy = min(dy)%>% round(.,digits = 2),
+            max.dy = max(dy)%>% round(.,digits = 2), 
+            t.half.avg = mean(t.half),
+            t.half.std = sd(t.half))
+
+#range of f
+aic.df %>% 
+  filter(red == "pup1-rfp", 
+         treatment == "none", 
+         degron %in% c("cln2.3","mODC.2","stable.3","stable.2","cln2.4")) %>% 
+  left_join(.,pup1.cell.attr, by = c("cell.id", "exp.field","red","treatment","degron","colony")) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0)  %>% 
+  filter(ifelse(degron == "stable.3", dy < 0.1, dy < 0.5)) %>% 
+  group_by(cell.id) %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% 
+  filter( model %in% c( "dy.dm.f","dy.f"), 
+          dm > 0.000015) %>% 
+   # mutate(degron = case_when(degron %in% c("cln2","cln2.3") ~ "GFP-CLN2",
+   #                          degron %in% c("mODC","mODC.2") ~ "GFP-mODC",
+   #                          degron %in% c("stable","stable.3") ~ "GFP"),
+   #       degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP"))) %>% 
+  group_by(degron, red,model)  %>% 
+  # filter(value < 0.05) %>% 
+  summarise(mean.f = mean(f) %>% round(.,digits = 2), 
+            median.f = median(f) %>% round(.,digits = 2),
+            std.f = sd(f) %>% round(.,digits = 3),
+            min.f = min(f)%>% round(.,digits = 2),
+            max.f = max(f)%>% round(.,digits = 2))
+
+#range of dm
+aic.df %>% 
+  filter(red == "pup1-rfp", 
+         treatment == "none", 
+         degron %in% c("cln2.3","mODC.2","stable.3","stable.2","cln2.4")) %>% 
+  left_join(.,pup1.cell.attr, by = c("cell.id", "exp.field","red","treatment","degron","colony")) %>% 
+  mutate(dapi.mean.bg.sub.puncta = ifelse(is.na(dapi.mean.bg.sub.puncta), 0, dapi.mean.bg.sub.puncta) , 
+         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0 , rfp.mean.bg.sub.puncta)) %>% 
+  filter(rfp.mean.bg.sub.puncta > 0)  %>% 
+  filter(ifelse(degron %in% c("stable.3","stable.2"), dy < 0.1, dy < 0.5)) %>% 
+  group_by(cell.id) %>% 
+  filter( model == "dy.dm", 
+          dm > 0.000015) %>% 
+   mutate(degron = case_when(degron %in% c("cln2.4","cln2.3") ~ "GFP-CLN2",
+                            degron %in% c("mODC","mODC.2") ~ "GFP-mODC",
+                            degron %in% c("stable.2","stable.3") ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP"))) %>%
+  group_by(degron, red) %>% 
+  summarise(mean.dm = mean(dm) %>% round(.,digits = 2), 
+            median.dm = median(dm) %>% round(.,digits = 2),
+            std.dm = sd(dm) %>% round(.,digits = 2),
+            min.dm = min(dm) %>% round(.,digits = 2),
+            max.dm = max(dm)%>% round(.,digits = 2))
+
+```
+
+#range of t-half
+```{r}
+parms.cell.atttr %>% 
+  group_by(cell.id) %>% 
+  filter( model == "dy.dm", 
+          dm > 0.000015) %>% 
+  mutate(t.half = log(2)/dy) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.4","cln2.3") ~ "GFP-CLN2",
+                            degron %in% c("mODC","mODC.2") ~ "GFP-mODC",
+                            degron %in% c("stable.2","stable.3") ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP"))) %>% 
+  group_by(degron) %>% 
+  summarise(dy.avg = mean(dy), 
+            dy.std = sd(dy), 
+            t.half.avg = median(t.half), 
+            t.half.std = sd(t.half) ,
+            t.half.max = max(t.half), 
+            t.half.min = min(t.half), 
+            cv.half = sd(t.half)/mean(t.half), 
+            cv2.half = var(t.half)/mean(t.half), 
+            no.cells = NROW(dy), 
+            range.half = t.half.max/t.half.min) %>% 
+   mutate_if(is.numeric, ~round(.,digits = 2))
+  
+```
+
+
+#percentage of cells with instantaneous maturation ie dm > 1 (or an exponential decay)
+```{r}
+no.of.cells <- parms.cell.atttr %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% 
+  filter( model == "dy.dm",dm > 0.00001 ) %>% 
+  group_by(degron, red) %>% 
+  tally()
+
+no.of.cells.high.dm <- parms.cell.atttr %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% 
+  filter(dm > 0.00001 & model == "dy.dm") %>% 
+  group_by(degron, red) %>% 
+  filter(dm > 1) %>% 
+  tally()
+
+no.of.cells.low.dm <-parms.cell.atttr %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% 
+  filter(dm > 0.00001 & model == "dy.dm")  %>% 
+  group_by(degron, red) %>% 
+  filter( dm < 1) %>% 
+  tally()
+
+
+left_join(no.of.cells %>% rename("n.all" = "n"), 
+          no.of.cells.high.dm %>% rename("n.high.dm" = "n"), by = c("red","degron")) %>% 
+  left_join(.,no.of.cells.low.dm %>% rename("n.low.dm" = "n"), by = c("red","degron")) %>% 
+  mutate(high.dm.per = (n.high.dm/n.all)*100, 
+         low.dm.per = ((n.low.dm/n.all)*100) %>% round(.,digits = 2)) %>% 
+  filter(degron %in% c("cln2.3","cln2.4","mODC.2","stable.3","stable.2"))
+```
+
+
+from the literature the range of dm: 
+```{r}
+dm.lit <- c(1.2*10^-3*60, 
+            0.28*10^-3*60,
+            0.18*10^-3*60,
+            0.13*10^-3*60,   #from Lizuka et al. 
+            log(2)/6.9,      #from Guerra et al.
+            log(2)/13.7)
+dm.lit
+```
+
+how does dy change with dm when dm < 1 and when dm > 1
+```{r}
+# dm < 1
+aic.df %>% 
+  filter(red == "pup1-rfp", treatment == "none", degron %in% c("cln2.3","mODC.2", "stable.2") ) %>% 
+  filter(ifelse(degron == "stable.2", dy < 0.1, dy < 10)) %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% 
+  filter(dm > 0.00001 & model == "dy.dm.f") %>% 
+  mutate(degron = case_when(degron == "cln2.3" ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC",
+                            degron == "stable.2" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP"))) %>% 
+  filter( dm < 1)  %>% 
+  ggplot(.,aes(x = dm, y = dy , color = colony))+
+  geom_point()+
+  facet_wrap(~degron, scales = "free")+
+  stat_cor()
+
+#dm > 1
+aic.df %>% 
+  filter(red == "pup1-rfp", treatment == "none", degron %in% c("cln2.3","mODC.2", "stable.2") ) %>% 
+  filter(ifelse(degron == "stable.2", dy < 0.1, dy < 10)) %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% 
+  filter(dm > 0.00001 & model == "dy.dm.f") %>% 
+  mutate(degron = case_when(degron == "cln2.3" ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC",
+                            degron == "stable.2" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP"))) %>% 
+  filter( dm > 1 & dm < 10)  %>% 
+  ggplot(.,aes(x = dm, y = dy , color = colony))+
+  geom_point()+
+  facet_wrap(~degron, scales = "free")+
+  stat_cor()
+```
+
+looking at how each term of the equation changes when dm is < 1 and when dm is > 1. 
+for dm > 1, the 3rd term is reaching 10^-10 as time progresses. 
+```{r}
+#for dm > 1 and dm < 10
+all.exp.list %>% 
+  mutate(colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8" ) ~ "Replicate 3")) %>% 
+  left_join(.,aic.df, by = c("cell.id","red","degron","treatment","colony")) %>% 
+  filter(model == "dy.dm.f", degron %in% c("mODC.2"), red == "pup1-rfp") %>% 
+  filter(dm > 1 & dm < 10, value < 0.05) %>% 
+  group_by(cell.id) %>% 
+  mutate(delta.time = delta.time/60,
+    dy.dm.1 = ((dy  * exp(-dy * delta.time)) / dm) , 
+         dy.dm.2 =  exp(-dy * delta.time) ,
+         dy.dm.3 =  ((dy * 1 * exp(-(dy + dm) * delta.time)) / dm),
+         pred.dy.dm = dy.dm.1 + dy.dm.2 - dy.dm.3 , 
+    I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1])
+
+#for dm < 1 
+all.exp.list %>% 
+  mutate(colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8" ) ~ "Replicate 3")) %>% 
+  left_join(.,aic.df, by = c("cell.id","red","degron","treatment","colony")) %>% 
+  filter(model == "dy.dm.f", degron %in% c("mODC.2"), red == "pup1-rfp") %>% 
+  filter(dm > 0.00001 & dm < 1, value < 0.05) %>% 
+  group_by(cell.id) %>% 
+  mutate(delta.time = delta.time/60,
+    dy.dm.1 = ((dy  * exp(-dy * delta.time)) / dm) , 
+         dy.dm.2 =  exp(-dy * delta.time) ,
+         dy.dm.3 =  ((dy * 1 * exp(-(dy + dm) * delta.time)) / dm),
+         pred.dy.dm = dy.dm.1 + dy.dm.2 - dy.dm.3 , 
+    I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1])
+```
+
+#how are the AIC and dy changing with dm < 1 and dm >1?
+getting cells who's dm <1 and dm > 1
+```{r}
+dm.1.10.cell <- 
+  aic.df %>% 
+  filter(red == "pup1-rfp", treatment == "none", degron %in% c("cln2.3","mODC.2", "stable.2") ) %>% 
+  filter(ifelse(degron == "stable.2", dy < 0.1, dy < 10)) %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% 
+  filter(dm > 0.00001 & model == "dy.dm.f") %>% 
+  mutate(degron = case_when(degron == "cln2.3" ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC",
+                            degron == "stable.2" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP"))) %>% 
+  filter( dm > 1 ) %>% pull(cell.id) 
+
+dm.low.cell <- 
+  aic.df %>% 
+  filter(red == "pup1-rfp", treatment == "none", degron %in% c("cln2.3","mODC.2", "stable.2") ) %>% 
+  filter(ifelse(degron == "stable.2", dy < 0.1, dy < 10)) %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% 
+  filter(dm > 0.00001 & model == "dy.dm.f") %>% 
+  mutate(degron = case_when(degron == "cln2.3" ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC",
+                            degron == "stable.2" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP"))) %>% 
+  filter( dm < 1 ) %>% pull(cell.id) 
+
+```
+
+How does the AIC scores of each model compare with each other?
+```{r}
+aic.df %>% 
+  filter(red == "pup1-rfp", treatment == "none", degron %in% c("cln2.3", "cln2.4","mODC.2", "stable.2","stable.3") ) %>% 
+  filter(ifelse(degron %in% c("stable.2","stable.3"), dy < 0.1, dy < 0.5)) %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% 
+  filter(dm > 0.00001) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3" ,"cln2.4")~ "GFP-CLN2",
+                            degron %in% c("mODC.2") ~ "GFP-mODC",
+                            degron %in% c("stable.2","stable.3") ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP"))) %>% 
+  filter(cell.id %in% dm.1.10.cell) %>% 
+  select(aic, model, cell.id, degron) %>% 
+  pivot_wider(values_from = aic, names_from = model, names_prefix = "aic.") %>% 
+  split(.$degron) %>% 
+  map(.,function(a){
+    gfp.name <- unique(a$degron)
+    a %>% 
+      select(contains("aic")) %>%
+      ggpairs()+
+      ggtitle(label = gfp.name)
+  })
+```
+
+#dy for each model when dm < 1 and when dm > 1
+comparing the dy values for dm > 1
+```{r}
+#comparing the dy values for dm > 1
+aic.df %>% 
+  filter(red == "pup1-rfp", treatment == "none", degron %in% c("cln2.3", "cln2.4","mODC.2", "stable.2","stable.3") ) %>% 
+  filter(ifelse(degron %in% c("stable.2","stable.3"), dy < 0.1, dy < 0.5)) %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% 
+  filter(dm > 0.00001) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3" ,"cln2.4")~ "GFP-CLN2",
+                            degron %in% c("mODC.2") ~ "GFP-mODC",
+                            degron %in% c("stable.2","stable.3") ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP"))) %>% 
+  filter(cell.id %in% dm.1.10.cell) %>% 
+  # filter(degron == "GFP-mODC") %>% 
+  select(dy, model, cell.id,degron) %>% 
+  pivot_wider(values_from = dy, names_from = model, names_prefix = "dy.") %>% 
+  split(.$degron) %>% 
+  map(.,function(a){
+    gfp.name <- unique(a$degron)
+    a %>% 
+      select(contains("dy")) %>%
+      ggpairs()+
+      ggtitle(label = gfp.name)
+  })
+```
+
+comparing the dy values for dm < 1
+```{r}
+aic.df %>% 
+  filter(red == "pup1-rfp", treatment == "none", degron %in% c("cln2.3","mODC.2", "stable.2") ) %>% 
+  filter(ifelse(degron %in% c("stable.2","stable.3"), dy < 0.1, dy < 0.5)) %>% 
+  mutate(dm = ifelse(is.na(dm), Inf, dm)) %>% 
+  filter(dm > 0.00001) %>% 
+  mutate(degron = case_when(degron %in% c("cln2.3" ,"cln2.4")~ "GFP-CLN2",
+                            degron %in% c("mODC.2") ~ "GFP-mODC",
+                            degron %in% c("stable.2","stable.3") ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP"))) %>% 
+  filter(cell.id %in% dm.low.cell) %>%  
+  select(dy, model, cell.id,degron) %>% 
+  pivot_wider(values_from = dy, names_from = model, names_prefix = "dy.") %>% 
+  split(.$degron) %>% 
+  map(.,function(a){
+    gfp.name <- unique(a$degron)
+    a %>% 
+      select(contains("dy")) %>%
+      ggpairs()+
+      ggtitle(label = gfp.name)
+  })
+
+```
+
+#no. of cells that have SSE > 0.05 = 176 cells 
+```{r}
+aic.df %>% 
+  filter(red == "pup1-rfp", treatment == "none", degron %in% c("cln2.3","mODC.2", "stable.2") ) %>% 
+  filter(ifelse(degron == "stable.2", dy < 0.1, dy < 0.5)) %>% 
+  filter(model == "dy.dm.f",
+         dm > 0.00001 ) %>% 
+  mutate(degron = case_when(degron == "cln2.3" ~ "GFP-CLN2",
+                            degron == "mODC.2" ~ "GFP-mODC",
+                            degron == "stable.2" ~ "GFP"),
+         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP"))) %>% 
+  group_by(degron, red, colony) %>% 
+  filter(value > 0.05)
+```
+
+
+
+
