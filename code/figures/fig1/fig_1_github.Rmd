@@ -1,9 +1,27 @@
 ---
-title: "figure 2"
-output: pdf
+title: "Figure 2"
+output: 
+    html_document: 
+    df_print: paged
+author: "Sukanya Das"
+date: "`r Sys.time()`"
 ---
-Libraries to load
+## Figures with section "Estimating single cell proteasomal decay rates" 
 ```{r}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, fig.align = "center")
+```
+
+
+<style type="text/css">
+.main-container {
+  max-width: 1500px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+Libraries to load
+```{r message=FALSE}
 library(data.table)
 library(tidyverse)
 library(reshape2)
@@ -13,17 +31,22 @@ library(ggpubr)
 library(patchwork)
 ```
 
-load the gfp timelapse data used for the mechanistic model
+set the working dir
 ```{r}
+setwd(dir = "/data/sukanya/paper") #change to where the repo is cloned
+```
+
+### load the gfp timelapse data used for the mechanistic model
+```{r }
 #dataframe used for estimating the decay rates
-all.exp.list <- read_csv("~/plots/all_data/all_exp_data.csv")
+all.exp.list <- read_csv("../../../data/all_exp_data.csv")
 
 #the dataframe with converged parameters
-aic.df <- read_csv("~/plots/all_data/aic.csv")
+aic.df <- read_csv("../../../data/aic.csv")
 
 ```
 
-##adding the replicate info 
+#### adding the replicate info 
 ```{r}
 aic.df <- aic.df %>% 
   mutate(exp.field = paste0(str_split(cell.id, "_", simplify = T)[,2],"_",
@@ -40,9 +63,9 @@ aic.df <- aic.df %>%
   
 ```
 
-##adding the cellular attributes
+#### adding the cellular attributes
 ```{r}
-pup1.cell.attr <- read_csv("~/plots/all_data/all_pup1_cell_attr.csv")
+pup1.cell.attr <- read_csv("../../../data/all_pup1_cell_attr.csv")
 
 pup1.cell.attr <- pup1.cell.attr %>% 
   mutate(exp.field = paste0(str_split(cell.id, "_", simplify = T)[,2],"_",
@@ -69,13 +92,14 @@ pup1.cell.attr <-  pup1.cell.attr %>%
   mutate(rfp.mean.bg.sub.puncta = ifelse(cell.id %in% multiple.pup1$cell.id , mean(rfp.mean.bg.sub.puncta), rfp.mean.bg.sub.puncta )) %>% 
     distinct(cell.id, .keep_all = TRUE) 
 ```
-#Panel A
-###ggridges
+
+## Panel A
+### ggridges
 ```{r}
 library(ggridges)
 ```
 
-###plot
+### plot
 ```{r fig.height= 4, fig.width= 2.5}
 gfpIntGGRid <- all.exp.list %>% 
   filter(red == "pup1-rfp", treatment == "none", degron != "cln2.2") %>% 
@@ -117,12 +141,13 @@ gfpIntGGRid <- all.exp.list %>%
 
 gfpIntGGRid
 ```
-###Saving the plot
+
+Saving the plot
 ```{r}
-ggsave(plot = gfpIntGGRid, path = "~/plots/paper1/figures/fig_1/", filename = "gfpggrid.png", width = 2.5, height = 4)
+# ggsave(plot = gfpIntGGRid, path = "~/plots/paper1/figures/fig_1/", filename = "gfpggrid.png", width = 2.5, height = 4)
 ```
 
-#Panel B
+## Panel B
 predicted values function
 ```{r}
 dy.dm.f.fn <- function(dy, f, dm, delta.time){
@@ -151,7 +176,7 @@ dy.dm.fn <- function(dy, dm, delta.time){
 }
 ```
 
-###selectting three cells from each GFP species
+##### selectting three cells from each GFP species
 ```{r}
 fig1c.df <- all.exp.list %>% 
   mutate(colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
@@ -167,7 +192,7 @@ fig1c.df <- all.exp.list %>%
 
 ```
 
-###predicted values for each model tested
+##### predicted values for each model tested
 ```{r}
 fig1c.pred <- fig1c.df %>% 
   dplyr::select(cell.id, delta.time, gfpMeanBgAFsub, degron, f, dy, dm, aic, value,model,colony) %>% 
@@ -194,20 +219,20 @@ fig1c.pred <- fig1c.pred %>%
           degron = factor(degron, levels = c("yeGFP-mODC","yeGFP-CLN2","yeGFP")))
 ```
 
-###testing out single cell plot
+##### testing out single cell plot
 ```{r}
-fig1c.pred %>% 
-  ggplot(.,aes(x = delta.time, y = gfpMeanBgAFsub, group = cell.id))+
-  geom_line(color = "gray4")+
-  geom_point(size = 1, color = "green4", alpha = 0.2)+
-  facet_grid(~degron, scales = "free")+
-  theme_pubr()+
-  xlab("Time (sec)")+
-  ylab("GFP Intensity [A.U.]")
+# fig1c.pred %>% 
+#   ggplot(.,aes(x = delta.time, y = gfpMeanBgAFsub, group = cell.id))+
+#   geom_line(color = "gray4")+
+#   geom_point(size = 1, color = "green4", alpha = 0.2)+
+#   facet_grid(~degron, scales = "free")+
+#   theme_pubr()+
+#   xlab("Time (sec)")+
+#   ylab("GFP Intensity [A.U.]")
   
 ```
 
-###Actual figure
+##### figure
 ```{r}
 GFPtrace.pup1Rep2022.grc <- fig1c.pred %>% 
   group_by(cell.id) %>%
@@ -253,12 +278,12 @@ GFPtrace.pup1Rep2022.grc <- fig1c.pred %>%
 GFPtrace.pup1Rep2022.grc
 ```
 
-###saving the plot
+##### saving the plot
 ```{r}
-ggsave(plot = GFPtrace.pup1Rep2022.grc, filename = "GFPTrace_singCell.png", path = "~/plots/paper1/figures/fig_1/GRC/", width = 4, height = 2)
+# ggsave(plot = GFPtrace.pup1Rep2022.grc, filename = "GFPTrace_singCell.png", path = "~/plots/paper1/figures/fig_1/GRC/", width = 4, height = 2)
 ```
 
-#Panel C
+## Panel C
 changing the colony values to include all the replicates
 ```{r}
 aic.df.allreps <- aic.df %>% 
@@ -301,23 +326,52 @@ aic.df.allreps %>% group_by(degron, colony) %>% tally()
 
 getting the median values of the half lives for each GFP (mODC, CLN2 and the stable) using all the reps
 ```{r}
-avg.half <- aic.df.allreps %>% 
-  # left_join(.,pup1.cell.attr %>% select(-colony) , by = c("cell.id","degron","red", "treatment", "exp.field")) %>% 
-  filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.3","stable.2")) %>% 
-  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "GFP-CLN2",
-                            degron %in% c("mODC.2", "mODC")  ~ "GFP-mODC",
-                            degron %in% c("stable","stable.2","stable.3") ~ "GFP"),
-         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP")) ,
-         t.half = log(2)/dy, 
-         rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
-  filter(rfp.mean.bg.sub.puncta >0) %>% 
-  group_by(degron) %>% 
-  summarise(avg.t = median(t.half)) 
+# avg.half <- aic.df.allreps %>% 
+#   # left_join(.,pup1.cell.attr %>% select(-colony) , by = c("cell.id","degron","red", "treatment", "exp.field")) %>% 
+#   filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.3","stable.2")) %>% 
+#   mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "GFP-CLN2",
+#                             degron %in% c("mODC.2", "mODC")  ~ "GFP-mODC",
+#                             degron %in% c("stable","stable.2","stable.3") ~ "GFP"),
+#          degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP")) ,
+#          t.half = log(2)/dy, 
+#          rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
+#   filter(rfp.mean.bg.sub.puncta >0) %>% 
+#   group_by(degron) %>% 
+#   summarise(avg.t = median(t.half)) 
 
 ```
 
+with all the reps
+```{r}
+# pup1RFP.halfLives.allreps <- aic.df.allreps %>%  
+#   # left_join(.,pup1.cell.attr , by = c("cell.id","degron","red", "treatment")) %>% 
+#   mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "GFP-CLN2",
+#                             degron %in% c("mODC.2", "mODC")  ~ "GFP-mODC",
+#                             degron %in% c("stable","stable.2","stable.3") ~ "GFP"),
+#          degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP")),
+#          colony = as.numeric(str_remove(string = colony, pattern = "Replicate ")) ,
+#          colony = factor(colony, levels = c(1:12))) %>% 
+#   filter(ifelse(degron == "GFP", gfp.mean.bg.af.sub.new > 1000 , gfp.mean.bg.af.sub.new > 0 )) %>% 
+#   ggplot(.,aes(y = log(2)/dy, x = degron, fill = colony))+
+#   geom_hline(data = avg.half, aes(yintercept = avg.t, linetype = degron))+
+#   geom_boxplot( outlier.size = 0.5)+
+#   # geom_jitter(position = position_jitterdodge(jitter.height = 0, jitter.width = 0.1), size = 0.2, alpha = 0.2)+
+#   theme_pubr()+
+#   # scale_fill_brewer(name = "Replicate", palette = "Set2")+
+#   ylab("Half-Life [Min.]")+
+#   theme(axis.title.x = element_blank(), 
+#         text = element_text(size = 6), 
+#         legend.position = c(0.4, 0.8), 
+#         legend.direction = "horizontal", 
+#         legend.background = element_blank(), 
+#         legend.key.size = unit(3 ,"mm"),
+#         legend.spacing.y = unit(-0.25, "cm"))
+# 
+# 
+# pup1RFP.halfLives.allreps
+```
 
-###For GRC 2023 and for paper
+##### For GRC 2023 and for the paper
 only one set of experiment for each GFP (each contains 3 biologiical replicates)
 ```{r}
 #getting the median value of half lives for each GFP keeping only one set of experiments each containing three biological replicates
@@ -375,87 +429,58 @@ pup1RFP.halfLives.oneReps.grc <-  aic.df.allreps %>%
 
 pup1RFP.halfLives.oneReps.grc
 ```
-###save the plot as png
+##### save the plot as png
 ```{r}
-ggsave(plot = pup1RFP.halfLives.oneReps.grc, filename = "pup1RFP_halfLife.png", path = "~/plots/paper1/figures/fig_1/GRC/", width = 7, height = 4)
+# ggsave(plot = pup1RFP.halfLives.oneReps.grc, filename = "pup1RFP_halfLife.png", path = "~/plots/paper1/figures/fig_1/GRC/", width = 7, height = 4)
 
 ```
 
-###with all the reps
-```{r}
-pup1RFP.halfLives.allreps <- aic.df.allreps %>%  
-  # left_join(.,pup1.cell.attr , by = c("cell.id","degron","red", "treatment")) %>% 
-  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "GFP-CLN2",
-                            degron %in% c("mODC.2", "mODC")  ~ "GFP-mODC",
-                            degron %in% c("stable","stable.2","stable.3") ~ "GFP"),
-         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP")),
-         colony = as.numeric(str_remove(string = colony, pattern = "Replicate ")) ,
-         colony = factor(colony, levels = c(1:12))) %>% 
-  filter(ifelse(degron == "GFP", gfp.mean.bg.af.sub.new > 1000 , gfp.mean.bg.af.sub.new > 0 )) %>% 
-  ggplot(.,aes(y = log(2)/dy, x = degron, fill = colony))+
-  geom_hline(data = avg.half, aes(yintercept = avg.t, linetype = degron))+
-  geom_boxplot( outlier.size = 0.5)+
-  # geom_jitter(position = position_jitterdodge(jitter.height = 0, jitter.width = 0.1), size = 0.2, alpha = 0.2)+
-  theme_pubr()+
-  # scale_fill_brewer(name = "Replicate", palette = "Set2")+
-  ylab("Half-Life [Min.]")+
-  theme(axis.title.x = element_blank(), 
-        text = element_text(size = 6), 
-        legend.position = c(0.4, 0.8), 
-        legend.direction = "horizontal", 
-        legend.background = element_blank(), 
-        legend.key.size = unit(3 ,"mm"),
-        legend.spacing.y = unit(-0.25, "cm"))
 
-
-pup1RFP.halfLives.allreps
-```
-
-#Panel D
-###cv of t.half
-###using all the replicates
+## Panel D : cv of t.half
+##### using all the replicates
 calculating the cv and median cv of t.half
 ```{r}
-cv.half <-  aic.df.allreps %>% 
-  filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3")) %>% 
-  mutate(rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
-  filter(rfp.mean.bg.sub.puncta > 0) %>% 
-  mutate(colony = case_when(degron == "stable.3" & colony == "Replicate 7"~ "Replicate 4",
-                            degron == "stable.3" & colony == "Replicate 8"~ "Replicate 5",
-                            degron == "stable.3" & colony == "Replicate 9"~ "Replicate 6",
-                            degron == "cln2.4" & colony == "Replicate 10" ~ "Replicate 4",
-                            degron == "cln2.4" & colony == "Replicate 11" ~ "Replicate 5",
-                            degron == "cln2.4" & colony == "Replicate 12" ~ "Replicate 6",
-                            TRUE ~ colony)) %>%
-  mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "GFP-CLN2",
-                            degron %in% c("mODC.2", "mODC")  ~ "GFP-mODC",
-                            degron %in% c("stable","stable.2","stable.3") ~ "GFP"),
-         degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP")),
-         colony = as.numeric(str_remove(string = colony, pattern = "Replicate ")), 
-         t.half = log(2)/dy) %>% 
-  group_by(degron,colony) %>% 
-  summarise(dy.avg = mean(dy), 
-            dy.std = sd(dy), 
-            t.half.avg = median(t.half), 
-            t.half.std = sd(t.half) ,
-            t.half.max = max(t.half), 
-            t.half.min = min(t.half), 
-            cv.half = sd(t.half)/mean(t.half), 
-            cv2.half = var(t.half)/mean(t.half), 
-            no.cells = NROW(dy), 
-            range.half = t.half.max/t.half.min) %>% 
-   mutate_if(is.numeric, ~round(.,digits = 2))
-
-#median between all the replicates
-cv.half.median <- cv.half %>% 
-  ungroup() %>% 
-  group_by(degron) %>% 
-  summarise(cv.half = median(cv.half))
+# cv.half <-  aic.df.allreps %>% 
+#   filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3")) %>% 
+#   mutate(rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta)) %>% 
+#   filter(rfp.mean.bg.sub.puncta > 0) %>% 
+#   mutate(colony = case_when(degron == "stable.3" & colony == "Replicate 7"~ "Replicate 4",
+#                             degron == "stable.3" & colony == "Replicate 8"~ "Replicate 5",
+#                             degron == "stable.3" & colony == "Replicate 9"~ "Replicate 6",
+#                             degron == "cln2.4" & colony == "Replicate 10" ~ "Replicate 4",
+#                             degron == "cln2.4" & colony == "Replicate 11" ~ "Replicate 5",
+#                             degron == "cln2.4" & colony == "Replicate 12" ~ "Replicate 6",
+#                             TRUE ~ colony)) %>%
+#   mutate(degron = case_when(degron %in% c("cln2.3","cln2.2","cln2","cln2.4") ~ "GFP-CLN2",
+#                             degron %in% c("mODC.2", "mODC")  ~ "GFP-mODC",
+#                             degron %in% c("stable","stable.2","stable.3") ~ "GFP"),
+#          degron = factor(degron , levels = c("GFP-mODC","GFP-CLN2","GFP")),
+#          colony = as.numeric(str_remove(string = colony, pattern = "Replicate ")), 
+#          t.half = log(2)/dy) %>% 
+#   group_by(degron,colony) %>% 
+#   summarise(dy.avg = mean(dy), 
+#             dy.std = sd(dy), 
+#             t.half.avg = median(t.half), 
+#             t.half.std = sd(t.half) ,
+#             t.half.max = max(t.half), 
+#             t.half.min = min(t.half), 
+#             cv.half = sd(t.half)/mean(t.half), 
+#             cv2.half = var(t.half)/mean(t.half), 
+#             no.cells = NROW(dy), 
+#             range.half = t.half.max/t.half.min) %>% 
+#    mutate_if(is.numeric, ~round(.,digits = 2))
+# 
+# #median between all the replicates
+# cv.half.median <- cv.half %>% 
+#   ungroup() %>% 
+#   group_by(degron) %>% 
+#   summarise(cv.half = median(cv.half))
   
 ```
 
 
-###For GRC 2023 and paper
+
+##### For GRC 2023 and paper
 only kept three replicates
 ```{r}
 cv.half.grc <-  aic.df.allreps %>% 
@@ -488,7 +513,7 @@ cv.half.grc <-  aic.df.allreps %>%
             range.half = t.half.max/t.half.min) %>% 
    mutate_if(is.numeric, ~round(.,digits = 2))
 
-#median between all the replicates
+#median 
 cv.half.median.grc <- cv.half.grc %>% 
   ungroup() %>% 
   group_by(degron) %>% 
@@ -521,14 +546,14 @@ cvtHalf.plt.grc
 
 ```
 
-###save the plot 
+##### save the plot 
 ```{r}
 ggsave(plot = cvtHalf.plt.grc, filename = "cv_halfLife.png", path = "~/plots/paper1/figures/fig_1/GRC/", width = 5, height = 3)
 ```
 
-#Panel E
+## Panel E
 gfp int cv
-###only three replicates for each GFP
+#### only three replicates for each GFP
 ```{r}
 cv.gfp.grc <-  aic.df.allreps %>% 
   filter(degron %in% c("mODC.2","cln2.3","stable.3")) %>% 
@@ -582,25 +607,12 @@ cvGFP.plt.grc <- cv.gfp.grc %>%
         legend.spacing.y = unit(-0.25, "cm"))
 
 cvGFP.plt.grc
+
 ggsave(plot = cvGFP.plt.grc, filename = "cv_GFP.png", path = "~/plots/paper1/figures/fig_1/GRC/", width = 5, height = 3)
 ```
-
-Figure 1: would be just the methods and model
-```{r}
-fig1.methods <- (wrap_elements(grid::textGrob('methods cartoon'))|wrap_elements(grid::textGrob('Model')))+
-  plot_layout(widths = c(0.7,0.3))+
-  plot_annotation(tag_levels = "A")
-
-fig1.methods
-```
-
-```{r}
-ggsave(plot = fig1.methods, path = "~/plots/paper1/figures/fig_1/", filename = "methods.pdf", width = 6, height = 5 )
-ggsave(plot = fig1.methods, path = "~/plots/paper1/figures/fig_1/", filename = "methods.png", width = 6, height = 5)
-```
-
-#Putting the entire figure together
-###fig 2: with only three replicates for each
+## Putting the entire figure together
+###fig 2: 
+with only three replicates for each
 ```{r}
 right.bot.sec <- ((cvtHalf.plt.grc+plot_spacer()+cvGFP.plt.grc))+
                 plot_layout(widths = c(0.5,-0.1,0.5))
@@ -620,8 +632,9 @@ figGFP.timelapse <-  (left.sec+plot_spacer()+right.sec)+
 
 figGFP.timelapse
 ```
-#saving the final figure in pdf and png formate
-```{r}
+
+saving the final figure in pdf and png formate
+```{r message=FALSE}
 ggsave(plot = figGFP.timelapse, path = "~/plots/paper1/figures/fig_1/", filename = "figGFP_Timelapse.pdf", width = 7, height = 5 )
 ggsave(plot = figGFP.timelapse, path = "~/plots/paper1/figures/fig_1/", filename = "figGFP_Timelapse.png", width = 7, height = 5)
 ```
