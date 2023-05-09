@@ -1,8 +1,24 @@
 ---
-title: "paper1_figures"
-output: html_notebook
+title: "Figure S1"
+output: 
+    html_document: 
+    df_print: paged
+author: "Sukanya Das"
+date: "`r Sys.time()`"
 ---
+## Supplemental figures with section "Estimating single cell proteasomal decay rates" 
+```{r}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, fig.align = "center")
+```
 
+
+<style type="text/css">
+.main-container {
+  max-width: 1500px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
 ```{r}
 library(ggplot2)
 library(latex2exp)
@@ -10,18 +26,18 @@ library(tidyverse)
 library(ggpubr)
 library(patchwork)
 ```
-#load the data
+#### load the data
 This loads the dataframe which has estimated parameters for all the experiments. 
 The paper contains data from two independent experiments for GFP-CLN2 and yeGFP, and one experiment for GFP-mODC, with three biological replicates in each experiment. 
 The downstream code only plots data from the experiments mentioned above, this is reflected in the code line
 "filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3"))"
 
-##AIC values of the 4 scenarios along with the parameters estimated 
+### AIC values of the 4 scenarios along with the model parameters estimated 
 ```{r}
-aic.df <- read_csv("~/plots/all_data/aic.csv")
+aic.df <- read_csv("../../../data/aic.csv")
 ```
 
-###add the replicate info 
+add the replicate info 
 ```{r}
 
 aic.df <- aic.df %>% 
@@ -39,12 +55,12 @@ aic.df <- aic.df %>%
   
 ```
 
-###Cellular attributes
+Cellular attributes
 ```{r}
-pup1.cell.attr <- read_csv("~/plots/all_data/all_pup1_cell_attr.csv")
+pup1.cell.attr <- read_csv("../../../data/all_pup1_cell_attr.csv")
 ```
 
-####removing multiple instances of each cell 
+removing multiple instances of each cell 
 ```{r}
 pup1.cell.attr <- pup1.cell.attr %>% 
   mutate(exp.field = paste0(str_split(cell.id, "_", simplify = T)[,2],"_",
@@ -73,17 +89,9 @@ pup1.cell.attr <-  pup1.cell.attr %>%
     distinct(cell.id, .keep_all = TRUE) 
 ```
 
-###Number of data points for each cell
-```{r}
-no.of.dp <- read_csv("~/plots/all_data/all_exp_data.csv") %>% 
-  filter(cell.id %in% figS2.df$cell.id) %>% 
-  group_by(cell.id) %>% 
-tally()
 
-```
-
-#Generating the final dataframe to be used for the figure
-##dy estimated using the 1-parameter exponential and 2-parameter with maturation model
+#### Generating the final dataframe to be used for the figure
+dy estimated using the 1-parameter exponential and 2-parameter with maturation model
 We need both the models because we are comparing the rate of decay from both the models
 ```{r}
 dy.pup1 <- aic.df %>% 
@@ -96,7 +104,7 @@ dy.pup1 <- aic.df %>%
   
 ```
 
-##number of cells that converged in both the models
+#### number of cells that converged in both the models
 ```{r}
 dy.pup1 %>% 
   filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3")) %>% 
@@ -108,7 +116,7 @@ dy.pup1 %>%
 
 ```
 
-##Final df used to generate the figures
+#### Final df used to generate the figures
 ```{r}
 figS2.df <- dy.pup1 %>% 
   filter(treatment == "none") %>% 
@@ -122,8 +130,17 @@ figS2.df <- dy.pup1 %>%
 
 ```
 
-#Analysis of the numbers mentioned in paper
-##Looking at how many cells converged in the mat model and in exponential model
+Number of data points for each cell
+```{r}
+no.of.dp <- read_csv("../../../data/all_exp_data.csv") %>% 
+  filter(cell.id %in% figS2.df$cell.id) %>% 
+  group_by(cell.id) %>% 
+tally()
+
+no.of.dp
+```
+##### Analysis of the numbers mentioned in paper
+Looking at how many cells converged in the mat model and in exponential model
 ```{r}
 #total no. of cells which converged in the the maturation + decay model but not in the exponential model
 figS2.df %>% 
@@ -144,7 +161,7 @@ figS2.df %>%
   tally()
 ```
 
-##percent of cells with lowest AIC scores in each model
+##### percent of cells with lowest AIC scores in each model
 ```{r}
 figS2.df %>% 
   filter(degron %in% c("mODC.2","cln2.3","cln2.4","stable.2","stable.3")) %>% 
@@ -160,7 +177,7 @@ figS2.df %>%
   mutate(per.mod = round((n/sum(n))*100 ,digits = 2))
 ```
 
-##underestimation of decay rates by exponential model grouped by 
+##### underestimation of decay rates by exponential model grouped by 
 ```{r}
 figS2.df %>% 
   dplyr::select(cell.id, dm, dy, model, degron, gfp.mean.bg.af.sub.new) %>% 
@@ -180,8 +197,8 @@ figS2.df %>%
             NROW(exp.mat.ratio))
 ```
 
-#plots
-##Panel A:aic scores
+#### plots
+## Panel A :aic scores
 ```{r}
 aic.score.ptDenPlt <- figS2.df %>% 
   filter(model %in% c("dy.dm","exponential")) %>% 
@@ -224,7 +241,7 @@ aic.score.ptDenPlt <- figS2.df %>%
 aic.score.ptDenPlt
 ```
 
-##Panel B: dy scatterplot
+## Panel B: dy scatterplot
 ```{r}
 dy.models.scatPlt <- figS2.df %>% 
   filter(model %in% c("dy.dm","exponential")) %>% 
@@ -263,8 +280,8 @@ dy.models.scatPlt <- figS2.df %>%
         legend.title = element_blank())
 dy.models.scatPlt
 ```
-##Panel C: % of cell with mat. rate <1 
-###No. of cells with maturation rate > 1 and < 1 
+## Panel C: % of cell with mat. rate <1 
+#### No. of cells with maturation rate > 1 and < 1 
 ```{r}
 figS2.df %>% 
   dplyr::select(cell.id, dm, dy, model, degron, gfp.mean.bg.af.sub.new) %>% 
@@ -277,7 +294,7 @@ figS2.df %>%
   group_by(degron, dm.level) %>% 
   tally()
 ```
-###Plot
+#### Plot
 ```{r}
 dm.per.low.BarPlt <- figS2.df %>% 
   filter(rfp.mean.bg.sub.puncta > 0,
@@ -313,7 +330,7 @@ dm.per.low.BarPlt <- figS2.df %>%
 dm.per.low.BarPlt
 ```
 
-##Panel D:Underestimation of the decay rates 
+## Panel D:Underestimation of the decay rates 
 Decay rates are higher in the maturation model compared to the exponential model
 ```{r}
 #a dummy df to add the no. of cells in each category
@@ -337,7 +354,7 @@ df.underEst <- figS2.df %>%
 df.underEst
 
 ```
-###Plot
+#### Plot
 ```{r}
 #boxplot of the underestimation 
 underEst.bx.plt <- figS2.df %>% 
@@ -380,7 +397,7 @@ underEst.bx.plt <- figS2.df %>%
 underEst.bx.plt
 ```
 
-#patchwork
+## patchwork
 ```{r fig.width= 5.5, fig.height= 4}
 left.sec <- aic.score.plt
 mid.sec <- dy.models.den.plt
@@ -391,22 +408,13 @@ figs2.final <- ((aic.score.ptDenPlt/dy.models.scatPlt)|(dm.per.low.BarPlt/underE
 
 figs2.final
 ```
-#saving the full figure
+#### saving the full figure as pdf and png
 ```{r}
 ggsave(plot = figs2.final, path = "~/plots/paper1/figures/fig_1/supplemental_figs/fig_s2/", filename = "aic_dy_unest.pdf", width = 7, height = 5 )
 ggsave(plot = figs2.final, path = "~/plots/paper1/figures/fig_1/supplemental_figs/fig_s2/", filename = "aic_dy_unest.png", width = 7, height = 5 )
 ```
 
-#saving individual plots as pdf
-```{r}
-ggsave(plot = aic.score.ptDenPlt, path = "~/plots/paper1/figures/fig_1/supplemental_figs/fig_s2/GRC/", filename = "aic_scatterPlt.pdf", width = 6, height = 3 )
 
-ggsave(plot = dy.models.scatPlt, path = "~/plots/paper1/figures/fig_1/supplemental_figs/fig_s2/GRC/", filename = "dy_scatterPlt.pdf", width = 5, height = 3 )
-
-ggsave(plot = dm.per.low.BarPlt, path = "~/plots/paper1/figures/fig_1/supplemental_figs/fig_s2/GRC/", filename = "dm_percent.pdf", width = 5, height = 3 )
-
-ggsave(plot = underEst.bx.plt, path = "~/plots/paper1/figures/fig_1/supplemental_figs/fig_s2/GRC/", filename = "under_est.pdf", width = 5, height = 4)
-```
 
 
 
