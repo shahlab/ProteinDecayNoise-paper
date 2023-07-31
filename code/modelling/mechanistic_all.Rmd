@@ -10,7 +10,7 @@ library(GGally)
 ```
 
 ```{r }
-citation(package = "optimx")
+# citation(package = "optimx")
 ```
 
 ```{r}
@@ -141,7 +141,6 @@ bind_rows(list.of.cells) %>%
 
 
 #mechanistic models with maturation, decay and f
-
 ```{r}
 #with 3 parameters (rate of decay, rate of maturation, frac of translation after CHX treatment)
  mechanistic.fn<- function(par, df){
@@ -204,7 +203,7 @@ bind_rows(list.of.cells) %>%
  mechanistic.fn.wof.cntDM<- function(par, df){
   
    dy <- par[1]
-   dm <- ((0.28+0.18 +1.2)/3 *10^-3)*60
+   dm <- ((0.28+0.18 +1.2+0.13)/4 *10^-3)*60
 
    df.new <- df  %>%
      mutate(model = ((dy  * exp(-dy * delta.time)) / dm) + exp(-dy * delta.time)  -
@@ -252,12 +251,32 @@ list.of.cells.2 <- bind_rows(list.of.cells) %>% #to analyze the stable pup1-rfp 
 #estimating parameters 
 dy, dm , f
 ```{r}
-#for the degron GFP
+#5/15/23
+#without the stable GFP and without proteasome inhibition
+list.of.cells.1 <- bind_rows(list.of.cells) %>% 
+  filter(treatment == "none") %>% 
+  filter(degron %in% c("mODC","mODC.2","cln2.3","cln2.4","cln2","cln2.2")) %>% 
+  split(.$cell.id)
 
+#with Proteasome inhibition treatment
+#dmso
+list.of.cells.2 <- bind_rows(list.of.cells) %>%
+  filter(treatment %in%  c("dmso1", "dmso2")) %>% 
+  split(.$cell.id)
+  
+#1uM, 2.5uM, 5uM, 50 uM
+list.of.cells.pi <- bind_rows(list.of.cells) %>%
+  filter(!(treatment %in%  c("dmso1", "dmso2", "none"))) %>% 
+  split(.$cell.id)
+```
+
+```{r}
+#for the degron GFP
+dm.init <-  ((0.28+0.18 +1.2+0.13)/4 *10^-3)*60
 #10-18-22 for the repeate of cln2 
 single.cell.dy.f.dm <- mclapply(list.of.cells.1, function(a){ 
    
-   par.optim <- c(0.5, 0.05005, 0.1)
+   par.optim <- c(0.05, 0.05005, dm.init) #change the initial dm value from 0.1 to the average of the four rate of maturations. 
    
    names(par.optim) <- c("f", "dy", "dm")
    
@@ -272,7 +291,7 @@ single.cell.dy.f.dm <- mclapply(list.of.cells.1, function(a){
           fn = mechanistic.fn , 
           method = "L-BFGS-B", 
           lower = c(0, 0.005, 0.00001), # dy = 0.00001*60 for stable GFP
-          upper = c(1, 1, Inf), #changed from dy = 6 to dy = 10 and now to dy = 1
+          upper = c(0.1, 1, Inf), #changed from dy = 6 to dy = 10 and now to dy = 1
           df = df,
           itnmax = 100000)
    }, mc.cores = 40)
@@ -280,14 +299,38 @@ single.cell.dy.f.dm <- mclapply(list.of.cells.1, function(a){
 
 ```
 
-
+```{r}
+#dmso control samples
+single.cell.dy.f.dm.2 <- mclapply(list.of.cells.2, function(a){ 
+   
+   par.optim <- c(0.05, 0.05005, dm.init) #change the initial dm value from 0.1 to the average of the four rate of maturations. 
+   
+   names(par.optim) <- c("f", "dy", "dm")
+   
+   df <- a %>% 
+            mutate(image.no = image.no-1) %>% 
+            group_by(cell.id) %>% 
+            mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1],
+                   delta.time = delta.time/60) %>% 
+     ungroup()
+   
+   optimx(par = par.optim, 
+          fn = mechanistic.fn , 
+          method = "L-BFGS-B", 
+          lower = c(0, 0.005, 0.00001), # dy = 0.00001*60 for stable GFP
+          upper = c(0.1, 1, Inf), #changed from dy = 6 to dy = 10 and now to dy = 1
+          df = df,
+          itnmax = 100000)
+   }, mc.cores = 40)
+```
 
 ```{r}
 #for the stable GFP and the 50uM treatment
 #for the repeate of 10-7-22 
-single.cell.dy.f.dm.2 <- mclapply(list.of.cells.2, function(a){ 
+#for all the MG132 treated samples 
+single.cell.dy.f.dm.pi <- mclapply(list.of.cells.pi, function(a){ 
    
-   par.optim <- c(0.5, 0.005005, 0.1)
+   par.optim <- c(0.05, 0.005005, dm.init)
    
    names(par.optim) <- c("f", "dy", "dm")
    
@@ -302,7 +345,7 @@ single.cell.dy.f.dm.2 <- mclapply(list.of.cells.2, function(a){
           fn = mechanistic.fn , 
           method = "L-BFGS-B", 
           lower = c(0, 0.0005, 0.00001), # dy = 0.00001*60 for stable GFP
-          upper = c(1, 0.1, Inf), #change dy = 0.1 from 10, similarly for all the other optimizations 
+          upper = c(0.1, 1, Inf), #change dy = 0.1 from 10, similarly for all the other optimizations; upper dy = 1 for the protein inhibition experiments
           df = df,
           itnmax = 100000)
    }, mc.cores = 40)
@@ -310,20 +353,35 @@ single.cell.dy.f.dm.2 <- mclapply(list.of.cells.2, function(a){
 
 ```
 
-
+###making dfs
 ```{r}
+
 single.cell.dy.f.dm.df <- single.cell.dy.f.dm %>% bind_rows(.id = "cell.id")
 single.cell.dy.f.dm.df.2 <- single.cell.dy.f.dm.2 %>% bind_rows(.id = "cell.id")
+single.cell.dy.f.dm.df.pi <- single.cell.dy.f.dm.pi %>% bind_rows(.id = "cell.id")
 
 ```
 
 ```{r}
-converged.cells <- bind_rows(single.cell.dy.f.dm.df,
-                             single.cell.dy.f.dm.df.2)  %>%
-  filter(convcode == 0) %>%
+bind_rows(single.cell.dy.f.dm.df,
+                             single.cell.dy.f.dm.df.2,
+                             single.cell.dy.f.dm.df.pi)  %>%
   mutate(degron = str_split(cell.id, "_", simplify = T)[,4],
          red = str_split(cell.id, "_", simplify = T)[,5],
-         treatment = str_split(cell.id, "_", simplify = T)[,6])
+         treatment = str_split(cell.id, "_", simplify = T)[,6]) %>% 
+  filter(red == "pup1-rfp") %>% 
+  group_by(degron, treatment, red, convcode) %>% 
+  tally()
+```
+
+```{r}
+converged.cells <- bind_rows(single.cell.dy.f.dm.df,
+                             single.cell.dy.f.dm.df.2,
+                             single.cell.dy.f.dm.df.pi)  %>%
+  mutate(degron = str_split(cell.id, "_", simplify = T)[,4],
+         red = str_split(cell.id, "_", simplify = T)[,5],
+         treatment = str_split(cell.id, "_", simplify = T)[,6]) %>% 
+  filter(convcode == 0) 
 
 # converged.cells <- single.cell.dy.f.dm.df.2  %>% 
 #   filter(convcode == 0) %>% 
@@ -344,22 +402,25 @@ converged.cells <- bind_rows(single.cell.dy.f.dm.df,
 ```{r}
 #dis of f
 converged.cells %>% 
+  filter(red == "pup1-rfp") %>% 
   ggplot(.,aes(x = f, color = treatment))+
   geom_density(aes(y = ..scaled..))+
-  facet_grid(red~degron)
+  facet_wrap(~degron)
 
 #dm
 converged.cells %>% 
+  filter(red == "pup1-rfp") %>% 
   ggplot(.,aes(x = dm, color = treatment))+
   geom_density(aes(y = ..scaled..))+
-  facet_grid(red~degron)+
+  facet_wrap(~degron)+
   scale_x_log10()
 
 #dy
 converged.cells %>% 
+  filter(red == "pup1-rfp") %>% 
   ggplot(.,aes(x = dy, color = treatment))+
   geom_density(aes(y = ..scaled..))+
-  facet_grid(red~degron)+
+  facet_wrap(~degron)+
   scale_x_log10()
 #dy
 # converged.cells.old %>% 
@@ -394,12 +455,13 @@ converged.cells %>%
 ```{r}
 converged.cells %>% 
   group_by(treatment, red, degron) %>% 
-  summarise(dm.avg = mean(dm))
+  summarise(dm.avg = median(dm))
 
 converged.cells %>% 
   group_by(treatment, red, degron) %>% 
-  summarise(f.avg = mean(f),
-            dy.avg = mean(dy))
+  summarise(f.avg = median(f),
+            dy.avg = median(dy),
+            dm.med = median(dm) )
 ```
 
 #without dm just dy and f
@@ -525,6 +587,7 @@ converged.cells.2 %>%
   scale_x_log10()
 ```
 
+
 #exponential
 ```{r}
 #for degron GFPs
@@ -638,6 +701,7 @@ converged.cells.3 %>%
   scale_x_log10()
 ```
 
+
 #without f
 just dm and dy
 ```{r}
@@ -717,6 +781,7 @@ converged.cells.4 <- bind_rows(single.cell.dy.dm.df.1,
 
 
 ```
+
 
 #without f and constant dm 
 5/9/2023
@@ -804,6 +869,7 @@ converged.cells.cnstDM %>%
   facet_grid(red~degron)+
   scale_x_log10()
 ```
+
 
 #AIC
 AIC function equation from the paper: McShane et al 2016 : Kinetic analysis of protein degradation reveals age dependent degradation. 
