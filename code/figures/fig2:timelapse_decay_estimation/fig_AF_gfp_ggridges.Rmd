@@ -1,0 +1,83 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Libraries to load
+```{r}
+source("../common_code.R")
+```
+
+#loading the data frames
+```{r}
+raw.int.mODC <- read.csv("~/plots/pup1-rfp-gfp-decay/6-28-22-modc-gfp/data/raw_gfp_int_all.csv") %>% 
+  dplyr::select(unique.trackID, gfp.mean.bg.sub,timepoint,experiment,exp.field, field, sample, ) %>% 
+  mutate(degron = "yeGFP-mODC")
+
+raw.int.cln2 <- read.csv("~/plots/pup1-rfp-gfp-decay/7-20-22-cln2-gfp/data/raw_gfp_int_all.csv") %>%  
+  dplyr::select(unique.trackID, gfp.mean.bg.sub,timepoint,experiment,exp.field, field, sample) %>% 
+  mutate(degron = "yeGFP-CLN2")
+
+raw.int.cln2.2 <- read.csv("~/plots/pup1-rfp-gfp-decay/10-7-22-cln2-gfp/data/raw_gfp_int_all.csv") %>% 
+  dplyr::select(unique.trackID, gfp.mean.bg.sub,timepoint,experiment,exp.field, field, sample) %>% 
+  mutate(degron = "yeGFP-CLN2")
+```
+
+#plot
+```{r}
+GFP.af.pos.ggrig.plt <- bind_rows(raw.int.mODC, raw.int.cln2, raw.int.cln2.2) %>% 
+  mutate(sample = case_when(sample == "neg.signal" ~ "GFP - (SDY10)", 
+                            sample == "pos.signal" ~ "GFP +"),
+         sample = factor(sample, levels = c("GFP +","GFP - (SDY10)")),
+         degron = factor(degron, levels = c("yeGFP-mODC", "yeGFP-CLN2"))) %>% 
+  
+  group_by(unique.trackID) %>% 
+  filter(timepoint < 32) %>% 
+  ggplot(.,aes(x = gfp.mean.bg.sub, 
+               y = factor(timepoint, levels = c(31:1)) ,
+               fill = sample, 
+               color = sample))+
+  stat_density_ridges(geom = "density_ridges_gradient" , 
+                      quantiles = 2, 
+                      quantile_lines = TRUE , 
+                      aes(height = ..ndensity..), 
+                      rel_min_height = 0.01, 
+                      size = 0.1) +
+  scale_fill_manual(values = alpha(c("seagreen3","gray"), 0.8), name = NULL)+
+  scale_color_manual(values = c("seagreen4","gray4"), name = NULL)+
+  theme_ridges(line_size = 0.3)+
+  theme_pubr()+
+  facet_wrap(~degron, scales = "free_x")+
+  theme(text = element_text(size = 8), 
+        legend.background = element_blank(),
+        strip.background = element_blank(),
+        legend.direction = "horizontal",
+        legend.position = "bottom",
+        legend.key.size = unit(2 ,"mm"),
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2))+
+  ylab("Image no.")+
+  xlab("GFP mean intensity (Background subtracted) [A.U.]")+
+  xlim(0,1000)+
+  labs(title = "A")
+
+GFP.af.pos.ggrig.plt
+```
+
+#Saving plot
+```{r}
+#png
+ggsave(filename = "gfp_AF_pos.png", 
+       plot = GFP.af.pos.ggrig.plt, 
+       path = "../../../fig_pdfs/Sfig_AF/", 
+       width = 7, height = 6)
+
+#pdf
+ggsave(filename = "gfp_AF_pos.pdf", 
+       plot = GFP.af.pos.ggrig.plt, 
+       path = "../../../fig_pdfs/Sfig_AF/", 
+       width = 7, height = 6)
+
+write_rds(x = GFP.af.pos.ggrig.plt, file = "../../../fig_pdfs/Sfig_AF/gfp_AF_pos.rds")
+```
+

@@ -1,0 +1,403 @@
+---
+title: "Fig4:Correlations"
+output: html_notebook
+---
+```{r}
+library(ggplot2)
+library(tidyverse)
+library(GGally)
+library(ggpubr)
+library(latex2exp)
+library(patchwork)
+library(gtools)
+library(grid)
+library(png)
+```
+
+#load the files with the decay parameters and the cellular attributes
+```{r}
+aic.df.all.reps <- read.csv("../../../data/paper_pup1_param_cell.csv")
+```
+
+##Removing the columns that I wont regress upon
+```{r}
+mlr.df <- aic.df.allreps %>% 
+  dplyr::select(-model,
+         -value,
+         -treatment,
+         -dapi.mean.bg.sub.puncta,
+         -pos.x,
+         -pos.y,
+         -rfp.sum.bg.sub.puncta,
+         -no.of.voxels,
+         -spheracity) %>% 
+  mutate(shape = Elip_B/Elip_C, 
+         t.half = log(2)/dy) %>%
+  ungroup() %>%
+  dplyr::select(-cell.id, 
+                -red,
+                -exp.field, 
+                -aic,
+                -Elip_B,
+                -Elip_C) 
+
+```
+
+#PanelA: correrlation plots  
+```{r}
+gfp.6.cor.plt <- mlr.df %>%
+  mutate(dm = log10(dm), 
+         shape = log(shape)) %>% 
+  dplyr::select(t.half,
+         regressors,
+         degron) %>%
+  dplyr::rename(
+    "GFP" = "gfp.mean.bg.af.sub.new" ,
+    "Pup1" = "rfp.mean.bg.sub.puncta",
+    "DNA" = "dapi.sum.bg.sub.puncta",
+    "Area" = "area"
+  ) %>%
+  pivot_longer(cols = 2:6) %>%
+  mutate(degron = factor(degron , levels = c("yeGFP-mODC", "yeGFP-CLN2"))) %>%
+  filter(!(name %in% c("f","dm","shape"))) %>% 
+  ggplot(., aes(x = value, y = t.half)) +
+      ggpointdensity::geom_pointdensity(size = 0.1, alpha = 0.8) +
+      stat_cor(size = 2.5) +
+      geom_smooth(method = "lm", se = FALSE, color = "red4", size = 0.2)+
+      # facet_wrap(degron ~ name, scales = "free", ncol = 4) +
+      facet_grid(degron ~ name, scales = "free")+
+      theme_pubr() +
+      labs(x = NULL) +
+      guides(color = "none")+
+      theme(text = element_text(size = 8),
+            axis.text.x = element_text(angle = 30),
+            legend.key.size = unit(2,"mm"), 
+            # legend.position = "none", 
+            axis.line = element_line(size = 0.1))+
+  ylab("Half-life [min.]")+
+  xlab("A.U")+
+  labs(title = "A")
+  
+
+gfp.6.cor.plt
+```
+#Panel B: Partial correlations
+###bootstraping ppcor and cor
+```{r}
+library(boot)
+```
+#### cor and pcor functions
+```{r}
+#correlation coefficient fn
+cor_fn <- function(data, i, reg){
+  #partial correlations
+    data1 <- data %>% 
+      dplyr::select(t.half, area,
+                    dapi.sum.bg.sub.puncta, 
+                    rfp.mean.bg.sub.puncta, 
+                    gfp.mean.bg.af.sub.new) %>% 
+      na.omit()
+    
+    a1 <- data1[i,]
+    
+    return(cor(a1$t.half, a1[[reg]])) #will return one correlation value between t-half and the regressor
+}
+
+#partial correlation fn
+pcor_fn <- function(data, i,j){
+  #partial correlations
+    data1 <- data %>% 
+      dplyr::select(t.half, area,
+                    dapi.sum.bg.sub.puncta, 
+                    rfp.mean.bg.sub.puncta, 
+                    gfp.mean.bg.af.sub.new) %>% 
+      na.omit()
+    
+    a1 <- data1[i,]
+    
+    return(ppcor::pcor(a1)$estimate[1,j]) #bootstrap on the partial cor estimate j ranges from 2:5
+}
+
+
+boot.list <-  mlr.df %>% 
+  split(.$degron)
+
+```
+
+###bootstrapping on cor()
+```{r}
+set.seed(1) #for reproducibility
+
+cor.boot.list <- boot.list %>% 
+  map(.,function(a){
+    lapply(c("area","dapi.sum.bg.sub.puncta","rfp.mean.bg.sub.puncta","gfp.mean.bg.af.sub.new"), function(b){
+      boot(data = a, cor_fn, R = 2000, reg = b)
+    })
+  })
+
+cor.boot.df <- cor.boot.list %>%
+  map(.,function(a){
+    a %>% 
+    map(.,function(b){
+    b %>% summary() %>% 
+      as.data.frame()
+  }) %>% 
+  bind_rows() %>% 
+  mutate(reg =c("area","dapi.sum.bg.sub.puncta","rfp.mean.bg.sub.puncta","gfp.mean.bg.af.sub.new"))
+  }) %>% 
+  bind_rows(.id = "degron")
+  
+```
+
+###bootstrapping on ppcor()
+```{r}
+set.seed(1)
+ppcor.boot.list <- boot.list %>% 
+  map(.,function(a){
+    lapply(c(2:5),function(b){
+       boot(data = a, pcor_fn, R = 2000, j = b)
+    })
+  })
+ppcor.boot.list
+
+#making a df 
+ppcor.boot.df <- ppcor.boot.list %>% 
+  map(.,function(a){
+    a %>% 
+    map(.,function(b){
+    b %>% summary() %>% 
+      as.data.frame()
+  }) %>% 
+  bind_rows() %>% 
+  mutate(reg =c("area","dapi.sum.bg.sub.puncta","rfp.mean.bg.sub.puncta","gfp.mean.bg.af.sub.new"))
+  }) %>% 
+  bind_rows(.id = "degron") %>% 
+  mutate(cor = "partial")
+
+
+```
+
+###getting the confidence intervals 
+```{r}
+#95% CI for pcor values using type "bca" 
+ppcr.ci <- ppcor.boot.list %>% 
+  map(.,function(b){
+    b %>% 
+    map(.,function(a){
+    boot.ci(boot.out = a, conf = 0.95, type = "bca")
+  })
+  })
+
+#95% CI for cor 
+cor.ci <- cor.boot.list %>% 
+  map(.,function(b){
+    b %>% 
+    map(.,function(a){
+    boot.ci(boot.out = a, conf = 0.95) #by default it generates CI based on 4 methods. 
+  })
+  })
+
+#making a df
+ppcr.ci.df <- ppcr.ci %>% 
+  map(.,function(a){
+    lapply(c(1:4), function(b){
+      ci.df <- data.frame(low = a[[b]]$bca[1,4],
+                          upp = a[[b]]$bca[1,5])
+       
+    }) %>% bind_rows() %>% 
+      mutate(reg =c("area","dapi.sum.bg.sub.puncta",
+                    "rfp.mean.bg.sub.puncta","gfp.mean.bg.af.sub.new"))
+  }) %>% bind_rows(.id = "degron") %>% 
+  mutate(cor = "partial")
+
+cor.ci.df <- cor.ci %>% 
+  map(.,function(a){
+    lapply(c(1:4), function(b){
+      ci.df <- data.frame(low = a[[b]]$bca[1,4],
+                          upp = a[[b]]$bca[1,5])
+       
+    }) %>% bind_rows() %>% 
+      mutate(reg =c("area","dapi.sum.bg.sub.puncta",
+                    "rfp.mean.bg.sub.puncta","gfp.mean.bg.af.sub.new"))
+  }) %>% bind_rows(.id = "degron") %>% 
+  mutate(cor = "standard")
+```
+
+###df for plotting 
+```{r}
+ci.df <- cor.ci.df %>% 
+  bind_rows(ppcr.ci.df) %>% 
+  left_join(.,cor.boot.df %>% 
+  mutate(cor = "standard") %>% 
+  bind_rows(.,ppcor.boot.df), 
+  by = c("cor","degron","reg")) %>%  
+  mutate(degron = factor(degron, levels = c("yeGFP-mODC","yeGFP-CLN2")), 
+          cor = factor(cor , levels = c("standard", "partial")),
+         reg = case_when(reg == "gfp.mean.bg.af.sub.new" ~ "GFP" ,
+                               reg == "area" ~ "Area",
+                               reg == "rfp.mean.bg.sub.puncta" ~ "Pup1",
+                               reg == "dapi.sum.bg.sub.puncta" ~ "DNA" ,
+                               reg == "t.half" ~ "half-life")) 
+```
+
+##plot
+```{r}
+cor.pcor.ci.plt.supp <- ci.df %>% 
+  filter(degron != "yeGFP") %>% 
+         # reg != "Pup1") %>% 
+  ggplot(.,aes(x = reg, y = original, fill = cor))+
+  geom_col(width = 0.5, position = "dodge")+
+  geom_errorbar( aes(x=reg, ymin=low, ymax=upp, color = cor), 
+                 width=0.25,
+                 alpha=1, size=0.25,
+                 position = position_dodge(0.5))+
+  facet_wrap(~degron)+
+  scale_y_continuous(breaks = seq(-0.5,0.5, by = 0.1))+
+  theme_pubr()+
+  theme(text = element_text(size = 8),
+            legend.key.size = unit(4,"mm"),
+        legend.position = "top", 
+        axis.line = element_line(size = 0.1),
+        strip.background = element_blank(),
+        axis.title.x = element_blank())+
+  scale_fill_manual(values = c("lightsteelblue4" ," steelblue4"), label = c("Standard", "Partial"), name = NULL)+
+  scale_color_manual(values = c("black","black"), name = NULL)+
+  guides(color = "none")+
+  ylab("Correlation with Half-life ")+
+  labs(title = "B")
+
+cor.pcor.ci.plt.supp
+```
+
+#patchwork for 4 cellular features (area, gfp, dapi, pup1) and t-half 
+```{r}
+gfp.4cor.hf.ppCor.plt <- (gfp.6.cor.plt/cor.pcor.ci.plt.supp)+
+  plot_layout( heights = c(0.7,0.3), 
+               guides = "collect")&theme(legend.position = "bottom")
+
+
+gfp.4cor.hf.ppCor.plt
+```
+
+```{r}
+ggsave(plot = gfp.4cor.hf.ppCor.plt, filename = "gfp_4cor_halfLife_ppcor.png", path = "../../../fig_pdfs/fig_cor/", width =6, height = 6)
+
+ggsave(plot = gfp.4cor.hf.ppCor.plt, filename = "gfp_4cor_halfLife_ppcor.pdf", path = "../../../fig_pdfs/fig_cor/", width =6, height = 6)
+```
+
+
+#Supplemental figs
+##rest of the cellular features as supplemental figs
+##area vs pup1 vs dna vs gfp
+```{r}
+df_corSup_fig <- mlr.df %>%
+  dplyr::select(t.half,
+         regressors,
+         degron) %>%
+  dplyr::rename(
+    "GFP" = "gfp.mean.bg.af.sub.new",
+    "Pup1" = "rfp.mean.bg.sub.puncta",
+    "DNA" = "dapi.sum.bg.sub.puncta",
+    "Area" = "area"
+  ) %>%
+  dplyr::select(Area, DNA, Pup1,GFP,degron ) %>% 
+  mutate(
+    degron = factor(degron , levels = c("yeGFP-mODC", "yeGFP-CLN2"))
+  ) 
+```
+###plot
+```{r}
+#area vs pup1
+area.pup1 <- df_corSup_fig %>% 
+  filter(degron == "yeGFP-mODC") %>% 
+  ggplot(.,aes(x = Area, y = Pup1))+
+  ggpointdensity::geom_pointdensity(size = 0.2, guides = F) +
+      stat_cor(size = 3) +
+      geom_smooth(method = "lm", se = FALSE, color = "red4", size = 0.5)+
+      theme_bw() +
+      labs(x = NULL) +
+      theme(text = element_text(size = 8),
+            axis.text.x = element_text(angle = 30),
+            legend.key.size = unit(2,"mm"), 
+            legend.position = "none", 
+            axis.line = element_line(size = 0.1))+
+  ylab("Pup1 [A.U]")+
+  xlab("Area [A.U]")+
+  labs(title = "A")
+area.pup1
+
+#dna vs pup1
+dna.pup1 <- df_corSup_fig %>% 
+  filter(degron == "yeGFP-mODC") %>% 
+  ggplot(.,aes(x = DNA, y = Pup1))+
+  ggpointdensity::geom_pointdensity(size = 0.2, guides = F) +
+      stat_cor(size = 3) +
+      geom_smooth(method = "lm", se = FALSE, color = "red4", size = 0.5)+
+      theme_bw() +
+      labs(x = NULL) +
+      theme(text = element_text(size = 8),
+            axis.text.x = element_text(angle = 30),
+            legend.key.size = unit(2,"mm"), 
+            legend.position = "none", 
+            axis.line = element_line(size = 0.1))+
+  ylim(80,250)+
+  ylab("Pup1 [A.U]")+
+  xlab("DNA [A.U]")+
+  labs(title = "B")
+dna.pup1
+
+#dna vs area
+dna.area <- df_corSup_fig %>%
+  filter(degron == "yeGFP-mODC") %>% 
+  ggplot(.,aes(x = DNA, y = Area))+
+  ggpointdensity::geom_pointdensity(size = 0.2, guides = F) +
+      stat_cor(size = 3) +
+      geom_smooth(method = "lm", se = FALSE, color = "red4", size = 0.5)+
+      theme_bw() +
+      labs(x = NULL) +
+      theme(text = element_text(size = 8),
+            axis.text.x = element_text(angle = 30),
+            legend.key.size = unit(2,"mm"), 
+            legend.position = "none", 
+            axis.line = element_line(size = 0.1))+
+  ylab("Area [A.U]")+
+  xlab("DNA [A.U]")+
+  labs(title = "C")
+dna.area
+```
+##GFP vs cellular feeatures
+```{r}
+gfpInt.cor.plt <- df_corSup_fig %>% 
+  pivot_longer(cols = 1:3) %>% 
+  filter(degron %in% c("yeGFP-mODC", "yeGFP-CLN2")) %>% 
+  ggplot(.,aes(x = value, y = GFP))+
+  ggpointdensity::geom_pointdensity(size = 0.2, guides = F) +
+      stat_cor(size = 3) +
+      geom_smooth(method = "lm", se = FALSE, color = "red4", size = 0.5)+
+  facet_grid(degron~name, scales = "free")+
+      theme_pubr() +
+      labs(x = NULL) +
+      theme(text = element_text(size = 8),
+            axis.text.x = element_text(angle = 30),
+            legend.key.size = unit(2,"mm"), 
+            legend.position = "none", 
+            axis.line = element_line(size = 0.1))+
+  xlab("A.U")+
+  labs(title = "D")
+gfpInt.cor.plt
+```
+
+## patchwork
+```{r fig.width= 6.5}
+test_cor <- ((area.pup1|dna.pup1|dna.area)/gfpInt.cor.plt)+
+  plot_layout(heights = c(0.4,0.6))
+test_cor
+```
+###Saving the figures
+```{r}
+ggsave(plot = test_cor, filename = "area.pup1.dna.gfp_cor.pdf", path = "../../../fig_pdfs/Sfig_cor/", width = 6.5, height = 6)
+
+ggsave(plot = test_cor, filename = "area.pup1.dna.gfp_cor.png", path = "../../../fig_pdfs/Sfig_cor/", width = 6.5, height = 6)
+
+
+```

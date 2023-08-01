@@ -1,0 +1,456 @@
+---
+title: "Figure2: Estimating degron GFP decay rates"
+output: pdf
+---
+Libraries to load
+```{r}
+library(data.table)
+library(tidyverse)
+library(reshape2)
+library(gganimate)
+library(ggridges)
+library(ggpubr)
+library(patchwork)
+library(scales)
+library(ggtext)
+library(latex2exp)
+```
+
+Code to load the necessary data
+```{r}
+#This is the timeseries dataa frame with cellular attributtes that needs to be saved. 
+timeseries.df <- read.csv("../../../data/paper_pup1_timeseries.csv")
+
+aic.df.allreps <- read.csv("../../../data/paper_pup1_param_cell.csv")
+```
+
+
+
+#Panel A
+###ggridges plot
+```{r}
+library(ggridges)
+```
+
+```{r fig.height= 4, fig.width= 2.5}
+gfpIntGGRid <- timeseries.df %>% 
+  group_by(cell.id) %>% 
+  mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1], 
+         image.no = image.no -1,
+         degron = factor(degron, levels = c("yeGFP-CLN2","yeGFP-mODC")))%>% 
+  filter(image.no > 0) %>% 
+  
+  ggplot(.,aes(x = I0_It, y = factor(image.no, levels = c(30:1)) ,fill = degron, color = degron))+
+  stat_density_ridges(geom = "density_ridges_gradient" , 
+                      quantiles = 2, 
+                      quantile_lines = TRUE , 
+                      aes(height = ..ndensity..), 
+                      rel_min_height = 0.01, 
+                      size = 0.1) +
+  scale_fill_manual(values = alpha(c("plum2","seagreen2"), 0.8), name = NULL)+
+  scale_color_manual(values = c("plum4","seagreen4"), name = NULL)+
+  theme_ridges(line_size = 0.3)+
+  theme_pubr()+
+  theme(text = element_text(size = 8), 
+        legend.background = element_blank(),
+        legend.direction = "vertical",
+        legend.position = c(0.7,0.1),
+        legend.key.size = unit(4 ,"mm"),
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2)
+        # legend.spacing.y = unit(5, "mm")
+        )+
+  # scale_x_log10(labels = scales::trans_format("log10", scales::math_format(10^.x)))+
+  # ylab("Time point")+
+  ylab(TeX("$\\leftarrow\\leftarrow\\leftarrow\\,Time\\,point$"))+
+  # xlab()+
+  # xlim(0,1.1)+
+  scale_x_continuous(breaks = seq(0,1,by = 0.25), name = "Normalized GFP Mean Intensity [A.U]", limits = c(-0.1,1.1))+
+  labs(title = "A")
+
+
+gfpIntGGRid
+
+```
+###Saving the plot
+```{r}
+ggsave(plot = gfpIntGGRid, path = "../../../fig_pdfs/fig_TL/", filename = "gfpggrid.png", width = 2.5, height = 4)
+ggsave(plot = gfpIntGGRid, path = "../../../fig_pdfs/fig_TL/", filename = "gfpggrid.pdf", width = 2.5, height = 4)
+```
+
+
+#Panel B
+predicted values function
+```{r}
+dy.dm.f.fn <- function(dy, f, dm, delta.time){
+  pred.gfp <- ((dy * (1 - f) * exp(-dy * delta.time)) / dm) + 
+              exp(-dy * delta.time) +
+              (1 - exp(-dy * delta.time)) * f -
+              ((dy * (1 - f) * exp(-(dy + dm) * delta.time)) / dm)
+  return(pred.gfp)
+}
+
+```
+
+###selectting three cells from each degron GFP
+```{r}
+fig1c.df <- timeseries.df %>% 
+  mutate(colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
+                            exp.field %in% c("20min_s5", "20min_s6") ~ "Replicate 2",
+                            exp.field %in% c("20min_s7", "20min_s8" ) ~ "Replicate 3")) %>% 
+  filter(cell.id %in% c( 
+    "1000002741_20min_s4_cln2.3_pup1-rfp_none",
+                         "1000002170_20min_s7_cln2.3_pup1-rfp_none",
+                         "1000002335_20min_s5_cln2.3_pup1-rfp_none", 
+                         "1000001808_20min_s7_mODC.2_pup1-rfp_none",
+                         "1000001860_20min_s4_mODC.2_pup1-rfp_none", 
+                         "1000001902_20min_s4_mODC.2_pup1-rfp_none"
+                         )) %>% 
+  left_join(.,aic.df.allreps %>% filter(cell.id %in% c( 
+    "1000002741_20min_s4_cln2.3_pup1-rfp_none",
+                         "1000002170_20min_s7_cln2.3_pup1-rfp_none",
+                         "1000002335_20min_s5_cln2.3_pup1-rfp_none", 
+                         "1000001808_20min_s7_mODC.2_pup1-rfp_none",
+                         "1000001860_20min_s4_mODC.2_pup1-rfp_none", 
+                         "1000001902_20min_s4_mODC.2_pup1-rfp_none"
+                         ),
+    model == "dy.dm.f") %>% 
+      dplyr::select(cell.id, colony, red, treatment, exp.field, degron, dy, f, dm,aic, model, value), by = c("cell.id","colony","red","treatment","exp.field","degron"))
+
+
+
+```
+
+###predicted values for each model tested
+```{r}
+fig1c.pred <- fig1c.df %>% 
+  dplyr::select(cell.id, delta.time, gfpMeanBgAFsub, degron, f, dy, dm, aic, value,model,colony) %>% 
+  group_by(cell.id) %>% 
+  mutate(pred.value =  case_when(model == "dy.dm.f" ~ dy.dm.f.fn(dy = dy, 
+                                                                dm = dm,
+                                                               f = f,
+                                                               delta.time = delta.time/60)), 
+         pred.gfp = gfpMeanBgAFsub[1]*pred.value)
+
+#changing the levels of the degrons so they appeare in a particular order in facet_grid
+fig1c.pred <- fig1c.pred %>% 
+  mutate( degron = factor(degron, levels = c("yeGFP-mODC","yeGFP-CLN2")))
+```
+
+###Actual figure
+
+###figure with three GFP traces with varying half lives
+```{r}
+#df to add the label "Half life (min)" 
+label_data <- fig1c.pred %>% 
+              ungroup() %>% 
+              distinct(degron, .keep_all = T) %>% 
+              mutate(
+                delta.time = 1200, 
+                pred.value = c(1,1), 
+                label = "Half life (min)") 
+
+#df to be used with plotting 
+GFPtrace.df <- fig1c.pred %>% 
+  group_by(cell.id) %>%
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  group_by(degron) %>% 
+  mutate(decay = case_when(dy == min(dy) ~ "low", 
+                           dy == max(dy) ~ "high", 
+                           dy < max(dy) & dy > min(dy) ~ "med"), 
+         decay = factor(decay, levels = c("low","med","high"))) %>% 
+  arrange(degron, decay) 
+
+#figure
+GFPtrace.pup1Rep2022.3 <- GFPtrace.df %>% 
+  ggplot(.,aes(x = delta.time/60, y = pred.value, group = cell.id, color = decay))+
+  geom_line(size = 0.3)+
+  geom_point(data = GFPtrace.df
+              #  ungroup() %>% 
+              # group_by(cell.id) %>% 
+              #  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) 
+             , 
+             aes(x = delta.time/60, y = It_I0),
+            size = 0.4, alpha = 0.5)+
+  facet_wrap(~degron ,scales = "free")+
+  theme_pubr()+
+  theme(text = element_text(size = 8),
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        strip.background = element_blank())+
+  guides(color = "none")+
+  xlab("Time [Min.]")+
+  ylab("GFP Intensity [A.U]")+
+  labs(title = "B")+
+  scale_x_continuous(breaks = c(0,5,10,15,20,25), limits = c(0,25))+
+  geom_text(data = GFPtrace.df %>% 
+              ungroup() %>% 
+              group_by(cell.id) %>% 
+              filter(delta.time == 0 ) %>% 
+              # dplyr::select(-pred.gfp) %>% 
+              mutate(
+                delta.time = 1200, 
+                     t.half = log(2)/dy) %>% 
+              ungroup() %>% 
+              mutate(
+                # pred.gfp = c(580, 530, 480, 620,570,520), 
+                     pred.value = c(0.9,0.8,0.7,
+                                    0.9,0.8,0.7)),
+            aes(label = round(t.half, digits = 2)),
+            size = 2.5)+
+  scale_color_manual(values = c("purple4" , "plum4","tan4",
+                                "purple4" , "plum4","tan4") , name = NULL)+
+  geom_text(data = label_data,  aes(x = delta.time/60, y = pred.value, label = label), inherit.aes = FALSE, size = 2)
+  
+GFPtrace.pup1Rep2022.3
+```
+
+
+###saving the plot
+```{r}
+ggsave(plot = GFPtrace.pup1Rep2022.3, filename = "GFPTrace_3Cells.png", path = "../../../fig_pdfs/fig_TL/", width = 4, height = 2)
+
+ggsave(plot = GFPtrace.pup1Rep2022.3, filename = "GFPTrace_3Cells.pdf", path = "../../../fig_pdfs/fig_TL/", width = 4, height = 2)
+
+
+```
+
+#Panel C
+Getting median values of each parameters for each degron GFP
+```{r}
+#median values of parameters
+med.para <- aic.df.allreps %>% 
+  mutate(degron = factor(degron , levels = c("yeGFP-mODC","yeGFP-CLN2")),
+         colony = as.numeric(str_remove(string = colony, pattern = "Replicate ")) ,
+         colony = factor(colony, levels = c(1:12))) %>% 
+  group_by(degron) %>% 
+  summarise(med.f = median(f), 
+            med.dy = median(dy),
+            med.dm = median(dm))
+med.para
+
+#df for plotting
+dy.box.df <- aic.df.allreps %>% 
+  mutate(degron = factor(degron , levels = c("yeGFP-mODC","yeGFP-CLN2")),
+         colony = as.numeric(str_remove(string = colony, pattern = "Replicate ")) ,
+         colony = factor(colony, levels = c(1:3))) 
+
+
+```
+
+###dist of f
+```{r}
+#plotting f dist
+f.box.plt <- dy.box.df %>% 
+  group_by(degron) %>% 
+  ggplot(.,aes(y = f, x = degron, fill = colony))+
+  geom_boxplot(outlier.size = 0.1, lwd = 0.1)+
+  geom_text(data = med.para %>% 
+              mutate(f = 0.4, 
+                     colony = factor(c(1,1))), 
+            aes(label = paste("Median =",round(med.f, digits = 3))),
+            size = 2)+
+  theme_pubr()+
+  scale_fill_brewer(name = "Replicate", palette = "Set2")+
+  ylab("Leaky production (f)")+
+  labs(title = "C")+
+  theme( axis.title.x = element_blank(),
+    axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        text = element_text(size = 8), 
+        legend.position = c(0.5,1), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(3 ,"mm"),
+        legend.spacing.y = unit(-0.25, "cm"))
+f.box.plt
+
+```
+```{r}
+ggsave(filename = "f_box.png", plot = f.box.plt, path = "../../../fig_pdfs/fig_TL/", width = 4, height = 2)
+ggsave(filename = "f_box.pdf", plot = f.box.plt, path = "../../../fig_pdfs/fig_TL/", width = 4, height = 2)
+```
+
+#Panel D
+###dm dist
+```{r}
+#plotting dm dist
+dm.vio.plt <- dy.box.df %>% 
+  ungroup() %>% 
+  group_by(degron, colony) %>% 
+  ggplot(.,aes(x = degron, y = dm, fill = colony))+
+  geom_violin(trim = FALSE, size = 0.1) +
+  geom_text(data = med.para %>% 
+              mutate(dm = c(0.001, 0.001), 
+                     colony = factor(c(1,1))), 
+            aes(label = TeX(paste0("Median = ",round(med.dm, digits = 3),"$\\,min^{-1}"),
+                            output = "character")),
+            size = 2, 
+            parse = TRUE)+
+  geom_hline(data = med.para, aes(yintercept = med.dm, linetype = degron), size = 0.2)+
+  theme_pubr()+
+  scale_fill_brewer(name = "Replicate", palette = "Set2")+
+  scale_color_brewer(name = "Replicate", palette = "Set2")+
+  scale_y_log10()+
+  scale_linetype_discrete(name = NULL)+
+  guides(fill = "none")+
+  # scale_y_log10(labels = scales::label_comma())+
+  # scale_y_log10(labels = scales::trans_format('log10', scales::math_format(10^.x)),
+  #               breaks = c(0,0.1,1,10,100,100000))+
+  ylab(TeX("Rate of maturation ($\\mu\\,min^{-1}$)"))+
+  labs(title = "D")+
+  theme(axis.title.x = element_blank(),
+    axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        text = element_text(size = 8), 
+        legend.position = c(0.5,1), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(2 ,"mm"),
+        legend.spacing.y = unit(-0.25, "cm"))
+dm.vio.plt
+```
+```{r}
+ggsave(filename = "dm_vio.png", plot = dm.vio.plt, path = "../../../fig_pdfs/fig_TL/", width = 4, height = 2)
+ggsave(filename = "dm_vio.pdf", plot = dm.vio.plt, path = "../../../fig_pdfs/fig_TL/", width = 4, height = 2)
+```
+
+
+#Panel E
+###dy dist
+```{r}
+#plot
+dy.box.plt <-  dy.box.df %>% 
+    ggplot(.,aes(y = dy, x = degron, fill = colony))+
+  geom_boxplot(outlier.size = 0.1, lwd = 0.1)+
+  geom_text(data = med.para %>% 
+                mutate(dy = c(0.25, 0.25),
+                       colony = factor(c(1,1))),
+            aes(x = degron, y = dy, 
+                label = TeX(paste0("Median = ",round(med.dy, digits = 3),"$\\,min^{-1}"),
+                            output = "character")), 
+            size = 2,
+            parse = TRUE)+
+  theme_pubr()+
+  scale_fill_brewer(name = "Replicate", palette = "Set2")+
+  scale_color_brewer(guide = "none", palette = "Set2")+
+  ylab("Half-life [Min.]")+
+  labs(title = "E")+
+  theme(axis.title.x = element_blank(), 
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        text = element_text(size = 8), 
+        legend.position = "top", 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(3 ,"mm"),
+        legend.spacing.y = unit(-0.25, "cm"))+
+  ylab(TeX("Rate of decay ($\\delta\\,min^{-1})$"))+
+  # ylim(0,60)
+  scale_y_log10(breaks = seq(0,0.3, by = 0.05))
+
+dy.box.plt
+```
+```{r}
+ggsave(filename = "dy_box.png", plot = dy.box.plt, path = "../../../fig_pdfs/fig_TL/", width = 4, height = 2)
+ggsave(filename = "dy_box.pdf", plot = dy.box.plt, path = "../../../fig_pdfs/fig_TL/", width = 4, height = 2)
+```
+
+
+#Panel F
+##distribution type
+##gamma ddistrubution of the half lives 
+```{r}
+library(fitdistrplus)
+```
+
+Half life = ln(2)/dy , min^-1
+```{r}
+dist.df <- dy.box.df %>% 
+  mutate(t.half = log(2)/dy)
+
+#fitting the half life distribution to a gamma distribution
+thalf.dist.fit <- dist.df %>% 
+  ungroup() %>% 
+  mutate(degron = as.character(degron),
+         colony = as.character(colony)) %>% 
+  filter(degron != "yeGFP") %>% 
+  dplyr::select(degron, t.half, colony) %>% 
+  na.omit() %>% 
+  split(.$degron) %>% 
+  map(.,function(a){
+    fitdist(data = a$t.half,"gamma") #fitting
+    
+  })
+
+#getting the gamma distribution shape and rate
+dist.stats <- thalf.dist.fit %>% 
+  map(.,function(a){
+    a$`estimate` %>% 
+      as_tibble(rownames = "estimate")
+  }) %>% bind_rows(.id = "degron") %>% 
+  pivot_wider(values_from = "value", names_from = "estimate")
+
+#plotting the dist
+half.life.plt <- dist.df %>%  
+  ungroup() %>% 
+  mutate(degron = as.character(degron),
+         colony = as.character(colony)) %>% 
+  filter(degron != "yeGFP") %>% 
+  left_join(.,dist.stats, by = c("degron")) %>% 
+  group_by(degron) %>% 
+  mutate(gam.dist = dgamma(t.half, shape = shape, rate = rate)) %>% #adds column with continuous values from a gamma distribution for a given shape and rate
+  ggplot(.,aes(x = t.half))+
+  geom_histogram(aes(y=..density..), binwidth = 0.5, color = "black", 
+                 fill = "grey",
+                 size = 0.1) +
+  geom_line(aes(y = gam.dist),  size = 0.5, color = "red4")+
+  facet_wrap(~factor(degron, levels = c("yeGFP-mODC","yeGFP-CLN2")))+
+  theme_pubr()+
+  labs(title="F",
+       x="Half-life (min.)", y="Density")+
+  theme( axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2),
+        text = element_text(size = 8), 
+        legend.position = c(0.5,1), 
+        legend.direction = "horizontal", 
+        legend.background = element_blank(), 
+        legend.key.size = unit(3 ,"mm"),
+        legend.spacing.y = unit(-0.25, "cm"),
+        strip.background = element_blank())
+  
+
+half.life.plt
+```
+```{r}
+ggsave(filename = "HL_dist_gamma.png", plot = half.life.plt, path = "../../../fig_pdfs/fig_TL/", width = 4, height = 2)
+ggsave(filename = "HL_dist_gamma.pdf", plot = half.life.plt, path = "../../../fig_pdfs/fig_TL/", width = 4, height = 2)
+```
+
+#Putting the entire figure together
+```{r fig.width= 6.6, fig.height= 7.5}
+
+top.right.sec <- (GFPtrace.pup1Rep2022.3/
+               f.box.plt/dm.vio.plt/half.life.plt)+
+  plot_layout(heights = c(0.5,0.4,0.4,0.3))
+
+top.left.sec <- (gfpIntGGRid/plot_spacer()/dy.box.plt)+
+  plot_layout(heights = c(0.8,-0.025,0.2))
+
+figGFP.timelapse <- (top.left.sec | plot_spacer() | top.right.sec)+
+  plot_layout(widths = c(0.5,-0.08,0.5))
+figGFP.timelapse
+```
+#saving the final figure in pdf and png formate
+```{r }
+ggsave(plot = figGFP.timelapse, path = "../../../fig_pdfs/fig_TL/", device = cairo_pdf,filename = "figGFP_Timelapse_2.pdf", width = 6.5, height = 7.5 )
+
+ ggsave(plot = figGFP.timelapse, path = "../../../fig_pdfs/fig_TL/", filename = "figGFP_Timelapse_2.png", width = 6.5, height = 7.5)
+
+write_rds(figGFP.timelapse, "../../../fig_pdfs/fig_TL/figGFP_timelapse_2.rds")
+```
+
+
+
+
+
