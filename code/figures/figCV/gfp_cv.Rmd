@@ -1,0 +1,536 @@
+---
+title: "Fig3:Noise in GFP decay"
+output: html_notebook
+---
+
+#combined df with the decay parameters and cellular features 
+```{r}
+aic.df.allreps <- read.csv("../../../data/paper_pup1_param_cell.csv")
+```
+
+#timeseries dataset
+```{r}
+timeseries.df <- read.csv("../../../data/paper_pup1_timeseries.csv")
+```
+
+Total no. of cells in each degron
+```{r}
+aic.df.allreps %>% 
+  group_by(degron) %>% tally()
+```
+
+adding the half life estimate to each.
+Formula: t.half = log(2)/dy
+```{r}
+cv.hl.df <-  aic.df.allreps %>%
+  mutate(degron = factor(degron , levels = c("yeGFP-mODC","yeGFP-CLN2")),
+         colony = as.numeric(str_remove(string = colony, pattern = "Replicate ")), 
+         t.half = log(2)/dy)
+
+```
+
+
+
+#change in gfp CV
+```{r}
+cv.df <- timeseries.df %>% 
+  group_by(cell.id) %>% 
+  mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1],
+         degron = factor(degron, levels = c("yeGFP-mODC","yeGFP-CLN2"))) %>% 
+  group_by(degron, image.no) %>%
+  summarise(cv = sd(gfpMeanBgAFsub)/mean(gfpMeanBgAFsub),
+            n.cell = NROW(gfpMeanBgAFsub), 
+            time.min = signif(mean(delta.time)/60, digits = 3), 
+            mean.gfp = mean(gfpMeanBgAFsub),
+            norm.gfp = mean(I0_It)) %>% 
+  group_by(degron) %>% 
+  arrange(degron, image.no) %>% 
+  mutate( norm.cv = cv/cv[1],
+          norm.cv2 = (cv/cv[1])^2)
+
+cv.df
+```
+##gfp mean change
+```{r}
+mean.gfp.plt <- cv.df %>% 
+  ggplot(.,aes(x = time.min, y = mean.gfp, color = degron))+
+  geom_point(size = 0.4)+
+  geom_smooth(size = 0.3, se = F)+
+  # facet_wrap(~degron, scales = "free")+
+  ylab("Mean GFP intensity [A.U]")+
+  xlab("Time (mins)")+
+  theme_pubr()+
+  # guides(color = "none")+
+  theme(text = element_text(size = 8), 
+        strip.background = element_blank(),
+        legend.background = element_blank(),
+        legend.direction = "horizontal",
+        legend.position = c(0.5,1),
+        legend.key.size = unit(3,"mm"),
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2))+
+  scale_color_manual(values = c("seagreen4","plum4"), name = NULL)+
+   scale_x_continuous(breaks = c(0,5,10,15,20,25), limits = c(0,25))+
+  scale_y_continuous(breaks = seq(0,400, by = 50))+
+  labs(title = "A")
+
+mean.gfp.plt
+```
+##mean norm gfp 
+```{r}
+mean.norm.gfp.plt <- cv.df %>% 
+  ggplot(.,aes(x = time.min, y = norm.gfp, color = degron))+
+  geom_point(size = 0.4)+
+  geom_smooth(size = 0.3, se = F)+
+  # facet_wrap(~degron, scales = "free")+
+  ylab(TeX("GFP(t)/GFP(0)"))+
+  xlab("Time (mins)")+
+  theme_pubr()+
+  guides(color = "none")+
+  theme(text = element_text(size = 5), 
+        strip.background = element_blank(),
+        legend.background = element_blank(),
+        legend.direction = "horizontal",
+        legend.position = "none",
+        axis.title.x = element_blank(),
+        # legend.key.size = unit(3 ,"mm"),
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2))+
+  scale_color_manual(values = c("seagreen4","plum4"), name = NULL)+
+   scale_x_continuous(breaks = c(0,5,10,15,20,25), limits = c(0,25))+
+  scale_y_continuous(breaks = seq(0,1, by = 0.1))
+  # labs(title = "A.1")
+
+mean.norm.gfp.plt
+```
+Combine the above two plots
+```{r}
+reduc.gfp.plt <- mean.gfp.plt+inset_element(mean.norm.gfp.plt, 
+                           top = 0.9, right = 1, 
+                           left = 0.39, bottom = 0.45)
+
+reduc.gfp.plt
+```
+#Fitting the change in noise in gfp vs time
+##Equations
+###mechanistic Eq CV(t) in GFP intensity
+```{r}
+noise.cvt.fn <- function(cv0,cvd, md,t){
+  #cv0 = gfp expression cv, 
+  #cvd = decay rate CV,
+  #md = mean decay rate
+  cvt <- (-1+(1+cv0^2)*((1+(cvd^2)*md*t)^(2/cvd^2))*((1+2*(cvd^2)*md*t)^-(1/cvd^2)))/(cv0^2)
+  return(cvt)
+}
+
+```
+
+##Calculating the CV^2(t)/CV^2(0) using the exeprimental values
+```{r}
+cv.1 <- cv.hl.df %>% #this df is for the values at first timepoint and estimated rates of decay
+  group_by(degron) %>% 
+  summarise(cv.gfp.0 = sd(gfp.mean.bg.af.sub.new)/mean(gfp.mean.bg.af.sub.new), 
+            cv.d = sd(dy)/mean(dy), 
+            cv.t.half = sd(t.half)/mean(t.half),
+            mean.d = mean(dy), 
+            gfp.cor = cor(gfp.mean.bg.af.sub.new, dy)) %>% 
+  mutate_if(is.numeric, signif, digits = 4)
+
+#estimating the cv^2(t)/cv^2(0)
+mechanistic.cvt <- cv.df %>% #this is the dataframe with cv(t) in GFP over time
+  left_join(.,cv.1, by = "degron") %>% #Combine with the data with the initial CV0 and CVd, mean decay rate 
+  group_by(degron) %>% 
+  mutate(`0.211.cvd` = noise.cvt.fn(cv0 = cv.gfp.0, 
+                                cvd = cv.d,
+                                md = mean.d,
+                                t = time.min))
+mechanistic.cvt 
+```
+
+
+##Fitting the parameters of the cvt equations
+fitting the data to the mechanistic change in CV for initial CV(0) in GFP intensity
+```{r}
+library(optimx)
+
+cvt.opt.fn<- function(df1, par){ 
+  #fitting for the CV in gfp at t = 0 
+  cv0.a <- par[1] #gfp cv0
+  # cvd.b <- par[2] #cv decay rate
+  
+  mech.cv.df <- df1 %>% 
+    mutate(mech.cvt2 = noise.cvt.fn(cv0 = cv0.a, 
+                                    cvd = cv.d,
+                                    md = mean.d,
+                                    t = time.min), 
+           cvt2.err = (norm.cv2 - mech.cvt2)^2) %>% 
+    summarise(sum.err = sum(cvt2.err))
+  
+  return(mech.cv.df$sum.err)
+}
+
+#Split the dataframe based on the degron 
+list.cvt.opt <- cv.df %>% 
+  left_join(.,cv.1, by = "degron") %>% 
+  split(.$degron)
+
+
+#Run the optimization 
+cvt.fits <- lapply(c(1,2), function(a){ 
+  
+  df <- list.cvt.opt[[a]]
+  
+  par.optim <- c(0.2) #Initial values for minimizationcv.gfp at t=0
+  
+  names(par.optim) <- c("gfp.cv0")
+  
+  optimx(par = par.optim, 
+         fn = cvt.opt.fn, 
+         method = "L-BFGS-B", 
+         lower = c(0.1), 
+         upper = c(0.8),
+         df1 = df,
+         itnmax = 100000)
+})
+
+
+#Making dataframes
+#without cor
+cvt.fits.df <- cvt.fits %>% bind_rows(.id = "degron") %>% 
+  mutate(degron = case_when(degron == "1" ~ "yeGFP-mODC", 
+                            degron == "2" ~ "yeGFP-CLN2")) 
+
+
+
+cvt.fits.df
+```
+
+###Calculating the CV^2(t)/CV^2(0) using the fitted values of CV0 and Corr
+```{r}
+mechanistic.cvt <- cv.df %>% 
+  left_join(.,cv.1, by = "degron") %>% 
+  left_join(.,cvt.fits.df %>% 
+              dplyr::select(degron,gfp.cv0) , by = "degron") %>%
+  group_by(degron) %>% 
+  mutate(degron = factor(degron, levels = c("yeGFP-mODC","yeGFP-CLN2"))) %>% 
+  mutate(`0.211.cvd` = noise.cvt.fn(cv0 = cv.gfp.0, 
+                                cvd = cv.d,
+                                md = mean.d,
+                                t = time.min),
+         opt.cv2 = noise.cvt.fn(cv0 = gfp.cv0, 
+                                   cvd = cv.d,
+                                   md = mean.d,
+                                   t = time.min))
+```
+
+#bootstrooping on cv2(t)/cv2(0)
+grouping by each timepoint and then resampling in each timepoint
+```{r}
+library(dplyr)
+library(boot)
+# Define function to compute CV
+cv_fun <- function(x) {
+  sd(x) / mean(x)
+}
+
+# Define function to compute bootstrap CV ratio
+compute_ratio <- function(df) {
+  # Bootstrap resample within each time point
+  df_boot <- df %>%
+    group_by(image.no) %>%
+    sample_n(size = n(), replace = TRUE) %>%
+    ungroup()
+  
+  # Compute CV for each time point
+  cv_values <- df_boot %>%
+    group_by(image.no) %>%
+    summarise(cv = cv_fun(gfpMeanBgAFsub)) %>%
+    pull(cv)
+  
+  # Return CV ratio for each time point
+  return((cv_values / cv_values[1])^2)
+}
+
+# Perform bootstrap resampling
+#yeGFO-mODC
+set.seed(123)
+R <- 1000  # Number of bootstrap resamples
+
+bootstrap_results <- replicate(R, compute_ratio(df =  timeseries.df %>% 
+                                                  filter(degron == "yeGFP-mODC")), simplify = "array")
+
+# Compute confidence intervals
+ci_lower <- apply(bootstrap_results, 1, function(x) quantile(x, 0.025))
+ci_upper <- apply(bootstrap_results, 1, function(x) quantile(x, 0.975))
+boot.mean <- apply(bootstrap_results, 1, function(x) mean(x))
+
+ci <- data.frame(image.no= unique(timeseries.df$image.no), ci_lower,boot.mean, ci_upper,
+                 degron = "yeGFP-mODC")
+
+
+```
+
+
+```{r}
+#yeGFP-CLN2
+set.seed(123)
+R <- 1000  # Number of bootstrap resamples
+
+bootstrap_results.cln2 <- replicate(R, compute_ratio(df =  timeseries.df %>% filter(degron == "yeGFP-CLN2")), simplify = "array")
+
+# Compute confidence intervals
+ci_lower.2 <- apply(bootstrap_results.cln2, 1, function(x) quantile(x, 0.025))
+ci_upper.2 <- apply(bootstrap_results.cln2, 1, function(x) quantile(x, 0.975))
+boot.mean.2 <- apply(bootstrap_results.cln2, 1, function(x) mean(x))
+
+ci.2 <- data.frame(image.no = unique(timeseries.df$image.no), 
+                   ci_lower = ci_lower.2,
+                   boot.mean = boot.mean.2, 
+                   ci_upper = ci_upper.2, 
+                   degron = "yeGFP-CLN2")
+```
+##plotting
+```{r}
+trans.cvt.plt <- ci %>% 
+  bind_rows(.,ci.2) %>% 
+  mutate(image.no = as.numeric(image.no), 
+         degron = factor(degron, levels = c("yeGFP-mODC","yeGFP-CLN2"))) %>% 
+  left_join(.,mechanistic.cvt, by = c("degron","image.no")) %>% 
+  ggplot(.,aes(x = time.min, y = norm.cv2, color = degron, group = degron))+
+  geom_point(size = 0.4)+
+  geom_errorbar(aes(x=time.min, ymin=ci_lower, ymax= ci_upper), 
+                 width=0.5, size=0.2,
+                 position = position_dodge(0.5), 
+                 )+
+  geom_line(data = mechanistic.cvt, aes(x = time.min, y = opt.cv2),
+            size = 0.3)+
+  # facet_wrap(~degron)+
+  scale_color_manual(values = c("seagreen4","plum4"), name = NULL)+
+  theme_pubr()+
+  theme(text = element_text(size = 8), 
+        strip.background = element_blank(),
+        legend.background = element_blank(),
+        legend.direction = "horizontal",
+        legend.key.size = unit(4,"mm"),
+        legend.position = c(0.5,1),
+        axis.line = element_line(size = 0.1),
+        axis.ticks = element_line(size = 0.2))+
+  scale_x_continuous(breaks = c(0,5,10,15,20,25), limits = c(0,25))+
+  scale_y_continuous(breaks = seq(1,7, by = 0.5), limits = c(0.5,7))+
+  # ylab(TeX("Normalized noise $(\\textit{CV^2})$ in GFP intensity"))+
+  # ylab(bquote(atop("Normalized noise" ~ italic(CV)), "in GFP intensity"))+
+   ylab(bquote(atop("Normalized noise"~(italic(CV^2)), "in GFP intensity")))+
+  xlab("Time (mins)")+
+  labs(title = "C")
+trans.cvt.plt
+```
+
+
+
+#CV of t.half and GFP
+###bootsrapping 
+```{r}
+#function
+#cv in half life
+cv.boot.fn <- function(data, i){
+  data1 <- data %>% 
+    ungroup() %>% 
+    dplyr::select(dy, t.half)
+  
+  a1 <- data1[i,]
+  
+  cv <- sd(a1$t.half)/mean(a1$t.half)
+  return(cv)
+}
+
+#cv in gfp
+cv.gfp.boot.fn <- function(data, i){
+  data1 <- data %>% 
+    ungroup() 
+  
+  a1 <- data1[i,]
+  
+  cv <- sd(a1$gfp.mean.bg.af.sub.new)/mean(a1$gfp.mean.bg.af.sub.new)
+  return(cv)
+}
+```
+
+Running the bootstrap
+```{r}
+set.seed(1)
+#cv in half life bootstrap
+cv.hl.boot.lst <- cv.hl.df %>% 
+  split(list(.$degron)) %>% 
+  map(.,function(a){
+    boot(data = a, statistic = cv.boot.fn, R = 2000)
+  })
+
+#gfp cv bootstrap
+cv.gfp.boot.lst <- cv.hl.df %>% 
+  split(list(.$degron)) %>% 
+  map(.,function(a){
+    boot(data = a, statistic = cv.gfp.boot.fn, R = 2000)
+  })
+
+#confidence interval
+cv.hl.ci <-  cv.hl.boot.lst %>% 
+  map(.,function(b){
+    boot.ci(boot.out = b, conf = 0.95, type = "bca")
+  })
+
+cv.hl.ci
+
+cv.gfp.ci <- cv.gfp.boot.lst %>% 
+  map(.,function(b){
+    boot.ci(boot.out = b, conf = 0.95, type = "bca")
+  })
+
+cv.gfp.ci
+```
+
+
+#plotting CV in gfp intensity
+```{r}
+cv.gfp.boot.df <- cv.gfp.boot.lst %>% 
+  map(.,function(a){
+    a %>% 
+      summary() %>% as.data.frame()
+  }) %>% 
+  bind_rows(.id = "degron") 
+
+
+cv.gfp.ci.df <- cv.gfp.ci %>% 
+  map(.,function(a){
+    data.frame(low.ci = a$`bca`[4], 
+               high.ci = a$`bca`[5])
+  }) %>%  
+  bind_rows(.id = "degron")
+
+cv.gfp.plt.df <- cv.gfp.boot.df %>% 
+  left_join(.,cv.gfp.ci.df, by = c("degron"))
+
+#displaying the final df where low.ci = 25% percentile value, and high.ci = 95% percentile value of theCV in GFP intensities at t=0. 
+cv.gfp.plt.df %>% 
+  mutate_if(is.numeric, signif, digits = 2)
+```
+
+##plot = cv.gfp.plt
+```{r}
+cv.gfp.plt <- cv.gfp.plt.df %>% 
+  mutate(degron = factor(degron, levels = c("yeGFP-mODC", "yeGFP-CLN2"))) %>% 
+  ggplot(.,aes(x =degron, y = original, fill = degron))+
+  geom_col(width = 0.15, position = "dodge")+
+  geom_errorbar( aes(x=degron, ymin=low.ci, ymax=high.ci), 
+                 width=0.1, size=0.3,
+                 position = position_dodge(0.2), 
+                 )+
+  theme_pubr()+
+  theme(text = element_text(size = 8),
+            legend.key.size = unit(4,"mm"),
+        legend.position = "top", 
+        axis.line = element_line(size = 0.1),
+        strip.background = element_blank(),
+        axis.title.x = element_blank())+
+  scale_fill_manual(values = c("slategray4", "slategray4"), name = NULL)+
+  guides(fill = "none")+
+  # ylab(TeX("Noise in GFP intensities (\\textit{CV}) at t\\,=\\,0"))+
+  ylab(bquote(atop("Noise in GFP intensity"~(italic(CV)), "at t = 0")))+
+  labs(title = "A")+
+  scale_y_continuous(breaks = seq(0,0.65, by = 0.05))
+
+cv.gfp.plt
+```
+
+#plotting cv in half life
+```{r}
+cv.hl.boot.df <- cv.hl.boot.lst %>% 
+  map(.,function(a){
+    a %>% 
+      summary() %>% 
+      as.data.frame()
+  }) %>% 
+  bind_rows(.id = "degron") 
+
+cv.hl.ci.df <- cv.hl.ci %>% 
+  map(.,function(a){
+    data.frame(ci.low = a$`bca`[4],
+               ci.high = a$`bca`[5])
+  }) %>% 
+  bind_rows(.id = "degron")
+
+cv.halflife.fig.df <- cv.hl.boot.df %>% 
+  left_join(.,cv.hl.ci.df, by = c("degron"))
+```
+
+
+
+##plot: cv.hl.plt
+```{r}
+cv.hl.plt <- cv.halflife.fig.df %>% 
+  mutate(degron = factor(degron, levels = c("yeGFP-mODC", "yeGFP-CLN2"))) %>% 
+  ggplot(.,aes(x =degron, y = original, fill = degron))+
+  geom_col(width = 0.15, position = "dodge")+
+  geom_errorbar( aes(x=degron, ymin=ci.low, ymax=ci.high), 
+                 width=0.1, size=0.3,
+                 position = position_dodge(0.2))+
+  theme_pubr()+
+  theme(text = element_text(size = 8),
+            legend.key.size = unit(4,"mm"),
+        legend.position = "top", 
+        axis.line = element_line(size = 0.1),
+        strip.background = element_blank(),
+        axis.title.x = element_blank())+
+  scale_fill_manual(values = c("slategray4", "slategray4"), name = NULL)+
+  guides(fill = "none")+
+  # scale_fill_manual(values = c("lightsteelblue4" ," steelblue4","gray"), name = NULL)+
+  # scale_fill_brewer(palette = "Set2", name = "Replicate")+
+  # scale_color_manual(values = c("black","black","black"))+
+  guides(color = "none")+
+  ylab(TeX("Noise in half-life (\\textit{CV})"))+
+  labs(title = "B")+
+  scale_y_continuous(breaks = seq(0,0.25, by = 0.05))
+
+cv.hl.plt
+```
+
+
+#patchwork
+
+```{r fig.width= 5, fig.height= 2.5}
+
+# t.1 <- reduc.gfp.plt
+t.1<- cv.gfp.plt
+
+t.2 <- cv.hl.plt
+
+t <- (t.1|plot_spacer()|t.2)+
+  plot_layout(widths = c(0.5,-0.08,0.5))
+
+b <- trans.cvt.plt
+
+tb <- (t/plot_spacer()/b)+
+  plot_layout(heights = c(0.4,-0.08,0.6))
+
+tb
+
+```
+
+#saving the final figure
+```{r}
+ggsave(filename = "fig_noise.png", plot = tb, path = "../../../fig_pdfs/fig_noise/", width = 5, height = 4)
+
+ggsave(filename = "fig_noise.pdf", plot = tb, path = "../../../fig_pdfs/fig_noise/", width = 5, height = 4)
+write_rds(tb, "../../../fig_pdfs/fig_noise/fig_nois.rds")
+```
+
+#Supp
+```{r}
+reduc.gfp.plt
+
+ggsave(filename = "Supfig_noise.png", plot = reduc.gfp.plt, path = "../../../fig_pdfs/Sfig_noise/", 
+       width = 4, height = 3.4)
+ggsave(filename = "Supfig_noise.pdf", plot = reduc.gfp.plt, path = "../../../fig_pdfs/Sfig_noise/", 
+       width = 4, height = 3.4)
+write_rds(reduc.gfp.plt, "../../../fig_pdfs/Sfig_noise/Supfig_noise.rds")
+```
+
