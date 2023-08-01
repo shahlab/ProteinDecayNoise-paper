@@ -1,9 +1,14 @@
 ---
-title: "Figure2: Estimating degron GFP decay rates"
-output: pdf
+title: 'Figure2: Estimating degron GFP decay rates'
+output: html_document
 ---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
 Libraries to load
-```{r}
+```{r }
 library(data.table)
 library(tidyverse)
 library(reshape2)
@@ -26,13 +31,13 @@ aic.df.allreps <- read.csv("../../../data/paper_pup1_param_cell.csv")
 
 
 
-#Panel A
-###ggridges plot
+# Panel A
+### ggridges plot
 ```{r}
 library(ggridges)
 ```
 
-```{r fig.height= 4, fig.width= 2.5}
+```{r}
 gfpIntGGRid <- timeseries.df %>% 
   group_by(cell.id) %>% 
   mutate(I0_It = gfpMeanBgAFsub/gfpMeanBgAFsub[1], 
@@ -72,14 +77,14 @@ gfpIntGGRid <- timeseries.df %>%
 gfpIntGGRid
 
 ```
-###Saving the plot
+### Saving the plot
 ```{r}
 ggsave(plot = gfpIntGGRid, path = "../../../fig_pdfs/fig_TL/", filename = "gfpggrid.png", width = 2.5, height = 4)
 ggsave(plot = gfpIntGGRid, path = "../../../fig_pdfs/fig_TL/", filename = "gfpggrid.pdf", width = 2.5, height = 4)
 ```
 
 
-#Panel B
+# Panel B
 predicted values function
 ```{r}
 dy.dm.f.fn <- function(dy, f, dm, delta.time){
@@ -92,7 +97,7 @@ dy.dm.f.fn <- function(dy, f, dm, delta.time){
 
 ```
 
-###selectting three cells from each degron GFP
+### selecting three cells from each degron GFP
 ```{r}
 fig1c.df <- timeseries.df %>% 
   mutate(colony = case_when(exp.field %in% c("20min_s3", "20min_s4") ~ "Replicate 1", 
@@ -121,7 +126,7 @@ fig1c.df <- timeseries.df %>%
 
 ```
 
-###predicted values for each model tested
+### predicted values for each model tested
 ```{r}
 fig1c.pred <- fig1c.df %>% 
   dplyr::select(cell.id, delta.time, gfpMeanBgAFsub, degron, f, dy, dm, aic, value,model,colony) %>% 
@@ -137,9 +142,9 @@ fig1c.pred <- fig1c.pred %>%
   mutate( degron = factor(degron, levels = c("yeGFP-mODC","yeGFP-CLN2")))
 ```
 
-###Actual figure
+### Actual figure
 
-###figure with three GFP traces with varying half lives
+### figure with three GFP traces with varying half lives
 ```{r}
 #df to add the label "Half life (min)" 
 label_data <- fig1c.pred %>% 
@@ -206,7 +211,7 @@ GFPtrace.pup1Rep2022.3
 ```
 
 
-###saving the plot
+### saving the plot
 ```{r}
 ggsave(plot = GFPtrace.pup1Rep2022.3, filename = "GFPTrace_3Cells.png", path = "../../../fig_pdfs/fig_TL/", width = 4, height = 2)
 
@@ -215,7 +220,7 @@ ggsave(plot = GFPtrace.pup1Rep2022.3, filename = "GFPTrace_3Cells.pdf", path = "
 
 ```
 
-#Panel C
+# Panel C
 Getting median values of each parameters for each degron GFP
 ```{r}
 #median values of parameters
@@ -238,7 +243,7 @@ dy.box.df <- aic.df.allreps %>%
 
 ```
 
-###dist of f
+### distribution of f parameter
 ```{r}
 #plotting f dist
 f.box.plt <- dy.box.df %>% 
@@ -271,8 +276,8 @@ ggsave(filename = "f_box.png", plot = f.box.plt, path = "../../../fig_pdfs/fig_T
 ggsave(filename = "f_box.pdf", plot = f.box.plt, path = "../../../fig_pdfs/fig_TL/", width = 4, height = 2)
 ```
 
-#Panel D
-###dm dist
+# Panel D
+### distribution of maturation rate (mu)
 ```{r}
 #plotting dm dist
 dm.vio.plt <- dy.box.df %>% 
@@ -310,14 +315,15 @@ dm.vio.plt <- dy.box.df %>%
         legend.spacing.y = unit(-0.25, "cm"))
 dm.vio.plt
 ```
+Saving plots 
 ```{r}
 ggsave(filename = "dm_vio.png", plot = dm.vio.plt, path = "../../../fig_pdfs/fig_TL/", width = 4, height = 2)
 ggsave(filename = "dm_vio.pdf", plot = dm.vio.plt, path = "../../../fig_pdfs/fig_TL/", width = 4, height = 2)
 ```
 
 
-#Panel E
-###dy dist
+# Panel E
+### Distribution of decay rates
 ```{r}
 #plot
 dy.box.plt <-  dy.box.df %>% 
@@ -427,7 +433,7 @@ ggsave(filename = "HL_dist_gamma.png", plot = half.life.plt, path = "../../../fi
 ggsave(filename = "HL_dist_gamma.pdf", plot = half.life.plt, path = "../../../fig_pdfs/fig_TL/", width = 4, height = 2)
 ```
 
-#Putting the entire figure together
+# Putting the entire figure together
 ```{r fig.width= 6.6, fig.height= 7.5}
 
 top.right.sec <- (GFPtrace.pup1Rep2022.3/
@@ -441,11 +447,12 @@ figGFP.timelapse <- (top.left.sec | plot_spacer() | top.right.sec)+
   plot_layout(widths = c(0.5,-0.08,0.5))
 figGFP.timelapse
 ```
-#saving the final figure in pdf and png formate
+
+saving the final figure in pdf and png formate
 ```{r }
 ggsave(plot = figGFP.timelapse, path = "../../../fig_pdfs/fig_TL/", device = cairo_pdf,filename = "figGFP_Timelapse_2.pdf", width = 6.5, height = 7.5 )
 
- ggsave(plot = figGFP.timelapse, path = "../../../fig_pdfs/fig_TL/", filename = "figGFP_Timelapse_2.png", width = 6.5, height = 7.5)
+ggsave(plot = figGFP.timelapse, path = "../../../fig_pdfs/fig_TL/", filename = "figGFP_Timelapse_2.png", width = 6.5, height = 7.5)
 
 write_rds(figGFP.timelapse, "../../../fig_pdfs/fig_TL/figGFP_timelapse_2.rds")
 ```

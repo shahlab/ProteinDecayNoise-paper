@@ -1,7 +1,13 @@
 ---
-title: "Fig4:Correlations"
-output: html_notebook
+title: "Fig5:Correlations"
+output:
+  html_document:
+    df_print: paged
 ---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, fig.align = "center")
+```
+
 ```{r}
 library(ggplot2)
 library(tidyverse)
@@ -14,12 +20,12 @@ library(grid)
 library(png)
 ```
 
-#load the files with the decay parameters and the cellular attributes
+load the files with the decay parameters and the cellular attributes
 ```{r}
-aic.df.all.reps <- read.csv("../../../data/paper_pup1_param_cell.csv")
+aic.df.allreps <- read.csv("../../../data/paper_pup1_param_cell.csv")
 ```
 
-##Removing the columns that I wont regress upon
+Removing the columns that I wont regress upon
 ```{r}
 mlr.df <- aic.df.allreps %>% 
   dplyr::select(-model,
@@ -43,7 +49,21 @@ mlr.df <- aic.df.allreps %>%
 
 ```
 
-#PanelA: correrlation plots  
+```{r}
+#cellular features to analyze
+regressors <- c(
+  "gfp.mean.bg.af.sub.new",
+                "area",
+                "rfp.mean.bg.sub.puncta",
+                "dapi.sum.bg.sub.puncta",
+                "shape")
+regressors.fp <- c(
+  "gfp.mean.bg.af.sub.new",
+                   "rfp.mean.bg.sub.puncta",
+                "dapi.sum.bg.sub.puncta")
+```
+
+# PanelA: correrlation plots  
 ```{r}
 gfp.6.cor.plt <- mlr.df %>%
   mutate(dm = log10(dm), 
@@ -81,12 +101,12 @@ gfp.6.cor.plt <- mlr.df %>%
 
 gfp.6.cor.plt
 ```
-#Panel B: Partial correlations
-###bootstraping ppcor and cor
+# Panel B: Partial correlations
+bootstraping ppcor and cor
 ```{r}
 library(boot)
 ```
-#### cor and pcor functions
+### cor and pcor functions
 ```{r}
 #correlation coefficient fn
 cor_fn <- function(data, i, reg){
@@ -124,7 +144,7 @@ boot.list <-  mlr.df %>%
 
 ```
 
-###bootstrapping on cor()
+### bootstrapping on cor()
 ```{r}
 set.seed(1) #for reproducibility
 
@@ -149,7 +169,7 @@ cor.boot.df <- cor.boot.list %>%
   
 ```
 
-###bootstrapping on ppcor()
+### bootstrapping on ppcor()
 ```{r}
 set.seed(1)
 ppcor.boot.list <- boot.list %>% 
@@ -177,7 +197,7 @@ ppcor.boot.df <- ppcor.boot.list %>%
 
 ```
 
-###getting the confidence intervals 
+### getting the confidence intervals 
 ```{r}
 #95% CI for pcor values using type "bca" 
 ppcr.ci <- ppcor.boot.list %>% 
@@ -223,7 +243,7 @@ cor.ci.df <- cor.ci %>%
   mutate(cor = "standard")
 ```
 
-###df for plotting 
+df for plotting 
 ```{r}
 ci.df <- cor.ci.df %>% 
   bind_rows(ppcr.ci.df) %>% 
@@ -240,7 +260,7 @@ ci.df <- cor.ci.df %>%
                                reg == "t.half" ~ "half-life")) 
 ```
 
-##plot
+## plot
 ```{r}
 cor.pcor.ci.plt.supp <- ci.df %>% 
   filter(degron != "yeGFP") %>% 
@@ -269,7 +289,7 @@ cor.pcor.ci.plt.supp <- ci.df %>%
 cor.pcor.ci.plt.supp
 ```
 
-#patchwork for 4 cellular features (area, gfp, dapi, pup1) and t-half 
+# patchwork
 ```{r}
 gfp.4cor.hf.ppCor.plt <- (gfp.6.cor.plt/cor.pcor.ci.plt.supp)+
   plot_layout( heights = c(0.7,0.3), 
@@ -278,7 +298,7 @@ gfp.4cor.hf.ppCor.plt <- (gfp.6.cor.plt/cor.pcor.ci.plt.supp)+
 
 gfp.4cor.hf.ppCor.plt
 ```
-
+saving figures
 ```{r}
 ggsave(plot = gfp.4cor.hf.ppCor.plt, filename = "gfp_4cor_halfLife_ppcor.png", path = "../../../fig_pdfs/fig_cor/", width =6, height = 6)
 
@@ -286,9 +306,8 @@ ggsave(plot = gfp.4cor.hf.ppCor.plt, filename = "gfp_4cor_halfLife_ppcor.pdf", p
 ```
 
 
-#Supplemental figs
-##rest of the cellular features as supplemental figs
-##area vs pup1 vs dna vs gfp
+# Supplemental figs
+## area vs pup1 vs dna vs gfp
 ```{r}
 df_corSup_fig <- mlr.df %>%
   dplyr::select(t.half,
@@ -305,7 +324,7 @@ df_corSup_fig <- mlr.df %>%
     degron = factor(degron , levels = c("yeGFP-mODC", "yeGFP-CLN2"))
   ) 
 ```
-###plot
+### plot
 ```{r}
 #area vs pup1
 area.pup1 <- df_corSup_fig %>% 
@@ -365,7 +384,7 @@ dna.area <- df_corSup_fig %>%
   labs(title = "C")
 dna.area
 ```
-##GFP vs cellular feeatures
+## GFP vs cellular feeatures
 ```{r}
 gfpInt.cor.plt <- df_corSup_fig %>% 
   pivot_longer(cols = 1:3) %>% 
@@ -393,7 +412,7 @@ test_cor <- ((area.pup1|dna.pup1|dna.area)/gfpInt.cor.plt)+
   plot_layout(heights = c(0.4,0.6))
 test_cor
 ```
-###Saving the figures
+Saving the figures
 ```{r}
 ggsave(plot = test_cor, filename = "area.pup1.dna.gfp_cor.pdf", path = "../../../fig_pdfs/Sfig_cor/", width = 6.5, height = 6)
 
