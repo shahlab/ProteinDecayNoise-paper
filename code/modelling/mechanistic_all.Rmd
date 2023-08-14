@@ -9,137 +9,11 @@ library(optimx)
 library(GGally)
 ```
 
-```{r }
-# citation(package = "optimx")
-```
-
+#read the timeseries data
 ```{r}
-list.of.cells <- read_csv("~/plots/all_data/all_exp_data.csv") %>% 
+list.of.cells <- read_csv("all_exp_data.csv") %>% 
   split(.$cell.id)
 ```
-
-```{r}
-#for non treated (no DMSO cells)cells all the three GFPs
-bind_rows(list.of.cells) %>% 
-  filter( treatment == "none", red == "pup1-rfp") %>% 
-  group_by(cell.id) %>% 
-  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
-  ggplot(.,aes(x = delta.time/60, y = gfpMeanBgAFsub , group_by = cell.id ))+
-  geom_line(alpha = 0.2)+
-  geom_hline(yintercept = 0.5)+
-  facet_wrap(~degron, scales = "free")+
-  theme_pubr()
-
-bind_rows(list.of.cells) %>% 
-  filter( treatment != "none", red == "pup1-rfp") %>% 
-  group_by(cell.id) %>% 
-  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
-  ggplot(.,aes(x = delta.time/60, y = gfpMeanBgAFsub , group_by = cell.id ))+
-  geom_line(alpha = 0.2)+
-  geom_hline(yintercept = 0.5)+
-  facet_wrap(~treatment, scales = "free")+
-  theme_pubr()
-```
-
-
-#profiles
-```{r}
-#for non treated cells all the three GFPs
-bind_rows(list.of.cells) %>% 
-  filter( treatment %in% c("none","dmso1","dmso2")) %>% 
-  group_by(cell.id) %>% 
-  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
-  ggplot(.,aes(x = delta.time/60, y = It_I0 , group_by = cell.id , color = treatment))+
-  geom_line(alpha = 0.2)+
-  geom_hline(yintercept = 0.5)+
-  facet_grid(red~degron, scales = "free_x")+
-  scale_y_log10()+
-  theme_pubr()
-
-#for non treated (no DMSO cells)cells all the three GFPs
-bind_rows(list.of.cells) %>% 
-  filter( treatment == "none", red == "pup1-rfp") %>% 
-  group_by(cell.id) %>% 
-  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
-  ggplot(.,aes(x = delta.time/60, y = It_I0 , group_by = cell.id , color = red))+
-  geom_line(alpha = 0.2)+
-  geom_hline(yintercept = 0.5)+
-  facet_wrap(~degron, scales = "free_x")+
-  scale_y_log10()+
-  theme_pubr()
-
-#CLN2
-bind_rows(list.of.cells) %>% 
-  filter(degron %in% c("cln2.3"), treatment == "none", red == "pup1-rfp") %>% 
-  group_by(cell.id) %>% 
-  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
-  ggplot(.,aes(x = delta.time/60, y = log(It_I0) , group_by = cell.id))+
-  geom_line(alpha = 0.2)+
-  geom_hline(yintercept = 0.5)+
-  facet_grid(degron~red, scales = "free_x")+
-  theme_pubr()
-
-#mODC
-bind_rows(list.of.cells) %>% 
-  filter(degron %in% c("mODC.2"), treatment == "none", red == "pup1-rfp") %>% 
-  group_by(cell.id) %>% 
-  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
-  ggplot(.,aes(x = delta.time/60, y = log(It_I0) , group_by = cell.id))+
-  geom_line(alpha = 0.2)+
-  geom_hline(yintercept = 0.5)+
-  facet_grid(degron~red, scales = "free_x")+
-  theme_pubr()
-
-#stable
-bind_rows(list.of.cells) %>% 
-  filter(degron == "stable.2", treatment == "none", red == "pup1-rfp") %>% 
-  group_by(cell.id) %>% 
-  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
-  ggplot(.,aes(x = delta.time/60, y = It_I0 , group_by = cell.id))+
-  geom_line(alpha = 0.2)+
-  geom_hline(yintercept = 0.5)+
-  facet_wrap(~red, scales = "free_x")+
-  scale_y_log10()+
-  theme_pubr()
-
-bind_rows(list.of.cells) %>% 
-  filter(treatment != "none" | degron %in% c("stable.2","stable.3")) %>% 
-  group_by(cell.id) %>% 
-  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
-  ggplot(.,aes(x = delta.time/60, y = It_I0 , group_by = cell.id))+
-  geom_line(alpha = 0.2)+
-  geom_hline(yintercept = 0.5)+
-  facet_wrap(~treatment, scales = "free_x")+
-  scale_y_log10()+
-  theme_pubr()
-```
-
-```{r}
-#CLN2
-bind_rows(list.of.cells) %>% 
-  filter(degron %in% c("cln2","cln2.2","cln2.3"), treatment == "none", delta.time == 0) %>% 
-  ggplot(.,aes(x = gfpMeanBgAFsub, fill = degron))+
-  geom_density(aes(y = ..scaled..), alpha = 0.2)+
-  facet_wrap(~red, scales = "free_x")+
-  scale_x_log10()+
-  theme_pubr()
-
-#mODC
-bind_rows(list.of.cells) %>% 
-  filter(degron %in% c("mODC","mODC.2","mODC.3"), treatment == "none", delta.time == 0) %>% 
-   ggplot(.,aes(x = gfpMeanBgAFsub, fill = degron))+
-  geom_density(aes(y = ..scaled..), alpha = 0.2)+
-  facet_wrap(~red, scales = "free_x")+
-  scale_x_log10()+
-  theme_pubr()
-```
-
-```{r}
-bind_rows(list.of.cells) %>% 
-  filter(image.no == 1) %>% 
-  group_by(treatment, red, degron) %>% tally()
-```
-
 
 #mechanistic models with maturation, decay and f
 ```{r}
@@ -168,38 +42,18 @@ bind_rows(list.of.cells) %>%
 ```{r}
 #degron GFPS
 list.of.cells.1 <- bind_rows(list.of.cells) %>% #to analyze the new experiments from 7-20-22 and 8-4-22
-  filter(degron %in% c("mODC.3","cln2.3")) %>% 
-  split(.$cell.id)
-
-#only stable and 50uM treatment cells
-list.of.cells.2 <- bind_rows(list.of.cells) %>% #to analyze the stable pup1-rfp from 7-20-22
-  filter(degron %in% c("stable", "stable.2") |
-         treatment == "50uM") %>% 
-  split(.$cell.id)
-
-```
-
-10-18-22
-```{r}
-#degron GFPS
-list.of.cells.1 <- bind_rows(list.of.cells) %>% #to analyze the new experiments from 7-20-22 and 8-4-22
-  filter(degron == "cln2.4") %>% 
-  split(.$cell.id)
-
-#only stable and 50uM treatment cells
-list.of.cells.2 <- bind_rows(list.of.cells) %>% #to analyze the stable pup1-rfp from 7-20-22
-  filter(degron == "stable.3") %>% 
+  filter(degron %in% c("mODC.2","cln2.3")) %>% 
   split(.$cell.id)
 ```
+
 
 #estimating parameters 
 dy, dm , f
 ```{r}
-#5/15/23
-#without the stable GFP and without proteasome inhibition
+#for degron GFPs 
 list.of.cells.1 <- bind_rows(list.of.cells) %>% 
   filter(treatment == "none") %>% 
-  filter(degron %in% c("mODC","mODC.2","cln2.3","cln2.4","cln2","cln2.2")) %>% 
+  filter(degron %in% c("mODC.2","cln2.3")) %>% 
   split(.$cell.id)
 
 #with Proteasome inhibition treatment
@@ -213,11 +67,12 @@ list.of.cells.pi <- bind_rows(list.of.cells) %>%
   filter(!(treatment %in%  c("dmso1", "dmso2", "none"))) %>% 
   split(.$cell.id)
 ```
-
+#Optimizing the decay model parameters 
+for degron GFPs
 ```{r}
 #for the degron GFP
 dm.init <-  ((0.28+0.18 +1.2+0.13)/4 *10^-3)*60
-#10-18-22 for the repeate of cln2 
+
 single.cell.dy.f.dm <- mclapply(list.of.cells.1, function(a){ 
    
    par.optim <- c(0.05, 0.05005, dm.init) #change the initial dm value from 0.1 to the average of the four rate of maturations. 
@@ -235,7 +90,7 @@ single.cell.dy.f.dm <- mclapply(list.of.cells.1, function(a){
           fn = mechanistic.fn , 
           method = "L-BFGS-B", 
           lower = c(0, 0.005, 0.00001), # dy = 0.00001*60 for stable GFP
-          upper = c(0.1, 1, Inf), #changed from dy = 6 to dy = 10 and now to dy = 1
+          upper = c(1, 1, Inf), #changed from dy = 6 to dy = 10 and now to dy = 1
           df = df,
           itnmax = 100000)
    }, mc.cores = 40)
@@ -243,6 +98,8 @@ single.cell.dy.f.dm <- mclapply(list.of.cells.1, function(a){
 
 ```
 
+#for DMSO control
+Note: Changed the upper limit on the leaky translation parrameter (f) to 0.1
 ```{r}
 #dmso control samples
 single.cell.dy.f.dm.2 <- mclapply(list.of.cells.2, function(a){ 
@@ -262,15 +119,13 @@ single.cell.dy.f.dm.2 <- mclapply(list.of.cells.2, function(a){
           fn = mechanistic.fn , 
           method = "L-BFGS-B", 
           lower = c(0, 0.005, 0.00001), # dy = 0.00001*60 for stable GFP
-          upper = c(0.1, 1, Inf), #changed from dy = 6 to dy = 10 and now to dy = 1
+          upper = c(0.1, 1, Inf), #upper f to 0.1
           df = df,
           itnmax = 100000)
    }, mc.cores = 40)
 ```
 
 ```{r}
-#for the stable GFP and the 50uM treatment
-#for the repeate of 10-7-22 
 #for all the MG132 treated samples 
 single.cell.dy.f.dm.pi <- mclapply(list.of.cells.pi, function(a){ 
    
@@ -317,7 +172,7 @@ bind_rows(single.cell.dy.f.dm.df,
   group_by(degron, treatment, red, convcode) %>% 
   tally()
 ```
-
+#keeping only converged cells
 ```{r}
 converged.cells <- bind_rows(single.cell.dy.f.dm.df,
                              single.cell.dy.f.dm.df.2,
@@ -327,11 +182,6 @@ converged.cells <- bind_rows(single.cell.dy.f.dm.df,
          treatment = str_split(cell.id, "_", simplify = T)[,6]) %>% 
   filter(convcode == 0) 
 
-# converged.cells <- single.cell.dy.f.dm.df.2  %>% 
-#   filter(convcode == 0) %>% 
-#   mutate(degron = str_split(cell.id, "_", simplify = T)[,4], 
-#          red = str_split(cell.id, "_", simplify = T)[,5],
-#          treatment = str_split(cell.id, "_", simplify = T)[,6])
 ```
 
 
@@ -359,17 +209,8 @@ aic.fn <- function(df,n){
 ##cmbining datasets
 ```{r}
 all.model.parm <- converged.cells%>% 
-  mutate(model = "dy.dm.f") %>% 
-  bind_rows(.,converged.cells.2 %>% 
-              mutate(model = "dy.f")) %>% 
-  bind_rows(.,converged.cells.3 %>% 
-              mutate(model = "exponential")) %>% 
-  bind_rows(.,converged.cells.4 %>% 
-              mutate(model = "dy.dm"))
+  mutate(model = "dy.dm.f") 
 
-#with constant dm
-#5.9.23 
-all.model.parm <- converged.cells.cnstDM %>% mutate(model = "constDM")
 ```
 
 ##adding the k (no. of parameters) value 
@@ -379,63 +220,26 @@ all.model.parm <- all.model.parm %>%
                        model %in% c("dy.f","dy.dm") ~ 2,
                        model == "exponential" ~ 1))
 
-#for constant dm and no f, 5/9/23
-all.model.parm <- all.model.parm %>% mutate(k = 1)
 ```
 
+#getting AIC values for each cell
 ```{r}
 aic.df <- aic.fn(all.model.parm, n = 31) %>% 
   group_by(cell.id) %>% 
   arrange(cell.id) %>% 
   ungroup()
-
-
 ```
 
 
-```{r}
-aic.df %>% 
-  group_by(treatment, red, degron,model) %>% 
-  tally()
-```
 
 
 #Saving the data
 ```{r}
-# aic.df %>% 
-#   write_csv(.,path = "~/plots/all_data/aic.csv")
-
-#updating the AIC df with the new experiments 
-# read_csv("~/plots/all_data/aic.csv") %>% 
-#   filter(!(degron %in% c("stable", "stable.2") | treatment == "50uM")) %>% 
-#   bind_rows(.,aic.df) %>% 
-#   write_csv(.,path = "~/plots/all_data/aic.csv")
-
-#10-18-22
-read_csv("~/plots/all_data/aic.csv") %>% 
-  bind_rows(.,aic.df %>% mutate(dm = ((0.28+0.18 +1.2)/3 *10^-3)*60)) %>% 
-  write_csv(.,path = "~/plots/all_data/aic.csv")
-
+aic.df %>% 
+  write_csv(.,path = "aic.csv")
 
 
 ```
 
-```{r}
-# all.model.parm %>% 
-#   write_csv(.,"~/plots/all_data/model_parms_2.csv")
-
-# all.model.parm2 <- read_csv("~/plots/all_data/model_parms_2.csv") %>% 
-#   filter(!(degron %in% c("stable", "stable.2") | treatment == "50uM")) %>% 
-#   bind_rows(.,all.model.parm) 
-#   
-#   
-# all.model.parm2 %>% 
-#   write_csv(.,"~/plots/all_data/model_parms_2.csv")
-
-#10-18-22
-read_csv("~/plots/all_data/model_parms_2.csv") %>% 
-  bind_rows(.,all.model.parm) %>% 
-  write_csv(.,"~/plots/all_data/model_parms_2.csv")
-```
 
 

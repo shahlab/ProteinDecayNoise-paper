@@ -6,51 +6,19 @@ output: html_notebook
 #cell attributes like area, mcherry intensity, etc at t=0
 ```{r}
 #cells with pup1-rfp
-modc_cells.pup1.1 <- read_csv("~/plots/pup1-rfp-gfp-decay/5-5-20-20mGFP/data/5-5-21-20mGFP_mODC_attributes_puncta_20min.csv") %>% 
-  rename( "gfp.mean.bg.af.sub.new" ="gfp.mean.bg.sub.new") %>% 
+
+modc_cells.pup1.2 <- read_csv("../generate_dfs/pup1-rfp-gfp-decay/6-28-22-modc-gfp/data/6-28-22_mODC_pup1_attributes.csv") %>% 
   filter(experiment == "20min")
 
 
-modc_cells.pup1.2 <- read_csv("~/plots/pup1-rfp-gfp-decay/6-28-22-modc-gfp/data/6-28-22_mODC_pup1_attributes.csv") %>% 
-  filter(experiment == "20min")
+cln2_cells.pup1.3 <- read_csv("../generate_dfs/pup1-rfp-gfp-decay/7-20-22-cln2-gfp/data/7-20-22_cln2_pup1_attributes.csv")
 
 
-cln2_cells.pup1.1 <- read_csv("~/plots/pup1-rfp-gfp-decay/5-9-21-30mGFP/data/5-9-21-30mGFP_cln2_puncta_attributes.csv") %>% 
-   rename( "gfp.mean.bg.af.sub.new" ="gfp.mean.bg.sub.new") %>% 
-  filter(experiment == "20min")
-
-cln2_cells.pup1.2 <- read_csv("~/plots/pup1-rfp-gfp-decay/6-28-22-cln2-gfp/data/6-28-22_cln2_pup1_attributes.csv")
-cln2_cells.pup1.3 <- read_csv("~/plots/pup1-rfp-gfp-decay/7-20-22-cln2-gfp/data/7-20-22_cln2_pup1_attributes.csv")
-#10-18-22 Repeate
-cln2_cells.pup1.4 <- read_csv("~/plots/pup1-rfp-gfp-decay/10-7-22-cln2-gfp/data/10-7-22_cln2_pup1_attributes.csv")
-
-
-stable_cells.pup1 <- read_csv("~/plots/pup1-rfp-gfp-decay/4-28-21-8hrGFP/data/4-28-21-8hrGFP_attributes.csv") %>% 
-  rename("gfp.mean.bg.af.sub.new" = "gfp.mean.bg.sub.new" )
-
-stable_cells.pup2 <- read_csv("~/plots/pup1-rfp-gfp-decay/7-20-22-stable-gfp/data/7-20-22_stable_pup1_attributes.csv")
-#10-7-22 repeate
-stable_cells.pup3 <- read_csv("~/plots/pup1-rfp-gfp-decay/10-7-22-stable-gfp/data/10-7-22_stable_pup1_attributes.csv")
-
-
-all.pup1.data <- bind_rows(cln2_cells.pup1.4 %>% 
-                             mutate(degron = "cln2.4"),
-                           stable_cells.pup3 %>% 
-                             mutate(degron = "stable.3")) %>% 
-  # bind_rows(modc_cells.pup1.1 %>% 
-  #           mutate(degron = "mODC"),
-  #           modc_cells.pup1.2 %>% 
-  #             mutate(degron = "mODC.2"),
-  #         cln2_cells.pup1.1 %>% 
-  #          mutate(degron = "cln2"),
-  #         cln2_cells.pup1.2 %>% 
-  #           mutate(degron = "cln2.2"),
-  #          cln2_cells.pup1.3 %>% 
-  #           mutate(degron = "cln2.3"),
-  #         stable_cells.pup1 %>% 
-  #           mutate(degron = "stable"),
-  #         stable_cells.pup2 %>% 
-  #           mutate(degron = "stable.2")) %>% 
+all.pup1.data <-bind_rows(
+            modc_cells.pup1.2 %>%
+              mutate(degron = "mODC.2"),
+           cln2_cells.pup1.3 %>%
+            mutate(degron = "cln2.3")) %>%
   select(unique.trackID, 
          gfp.mean.bg.af.sub.new, 
          gfp.sum.bg.af.sub,
@@ -82,164 +50,40 @@ all.pup1.data <- bind_rows(cln2_cells.pup1.4 %>%
   mutate(red = "pup1-rfp",
          treatment = "none",
          cell.id = paste0(cell.id ,"_",degron,"_",red,"_",treatment))
-
-# all.pup1.data %>% 
-#   write_csv(.,"~/plots/all_data/all_pup1_cell_attr.csv")
-
-#10-18-22 
-read_csv("~/plots/all_data/all_pup1_cell_attr.csv") %>% 
-  bind_rows(.,all.pup1.data) %>% 
-  write_csv(.,path = "~/plots/all_data/all_pup1_cell_attr.csv")
+all.pup1.data %>% 
+  write_csv(.,path = "all_pup1_cell_attr.csv")
 
 
 ```
 
 
-
-#old tef2-mcherry values
-```{r}
-modc_cells.tef2mch.gfp.1 <- read_csv("~/plots/7-1-20/dataframes/gfp_mODC_area_intensity.csv") %>% filter(image.no == 1)
-cln2_cells.tef2mch.gfp.1 <- read_csv("~/plots/7-2-20/new_filters/gfp_cln2Pest.csv")
-
-stable_cells.tef2mch.gfp <- read_csv("~/plots/7-10-20-8hrgfp/dataframes/gfp_stable_filtered_attributes.csv")
-
-#cells with constitutive mcherry, their mcherry values
-modc_cells.tef2mcherry.mcherry <- read_csv("~/plots/7-1-20/dataframes/mcherry_filtered_GFP-mODC.csv")
-cln2_cells.tef2mcherry.mcherry <- read_csv("~/plots/7-2-20/new_filters/data/mcherry_cln2Pest_filtered.csv")
-stable_cells.tef2mcherry.mcherry <- read_csv("~/plots/7-10-20-8hrgfp/dataframes/mcherry_filtered_GFP-stable.csv")
-
-
-#combining the gfp and mcherry values of cells with constitutive mcherry. 
-modc_tef2mCh_gfp.mch <- modc_cells.tef2mch.gfp.1 %>% 
-  filter(image.no == 1) %>% 
-  select(cell.id, area, gfpMeanBgAFsub, image.no) %>% 
-  left_join(., modc_cells.tef2mcherry.mcherry %>% 
-              filter(image.no == 1) %>% 
-              select(cell.id, area, mcherryMeanBgAFsub, image.no) , by = c("cell.id", "area", "image.no"))
-
-
-cln2_tef2mCh_gfp.mch <- cln2_cells.tef2mch.gfp.1 %>% 
-  filter(image.no == 1) %>% 
-  select(cell.id, area, gfpMeanBgAFsub, image.no) %>% 
-  left_join(.,cln2_cells.tef2mcherry.mcherry %>% 
-              filter(image.no == 1) %>% 
-              select(cell.id, area, mcherryMeanBgAFsub, image.no) , by = c("cell.id", "area", "image.no"))
-
-stable_tef2mCh_gfp.mch <- stable_cells.tef2mch.gfp %>% 
-  filter(image.no == 1) %>% 
-  select(cell.id, area, gfpMeanBgAFsub, image.no) %>% 
-  left_join(.,stable_cells.tef2mcherry.mcherry %>% 
-              filter(image.no == 1) %>% 
-              select(cell.id, area, mcherryMeanBgAFsub, image.no) , by = c("cell.id", "area", "image.no"))
-
-
-tef2.old <- modc_tef2mCh_gfp.mch %>% 
-  mutate(degron = "mODC") %>% 
-  bind_rows(.,cln2_tef2mCh_gfp.mch %>% 
-              mutate(degron = "cln2"),
-            stable_tef2mCh_gfp.mch %>% 
-              mutate(degron = "stable")) %>% 
-  mutate(red = "tef2-mCherry", 
-         treatment = "none",
-         experiment = str_split(cell.id , "_", simplify = T)[,2],
-         exp.field = paste0(str_split(cell.id , "_", simplify = T)[,2],"_",
-                            str_split(cell.id , "_", simplify = T)[,3])) %>% 
-  filter(experiment == "20min")
-
-```
-#repeate of the tef2-mcherry experiments 
-```{r}
-#cells with constitutive mCherry, their gfp values
-modc_cells.tef2mch.gfp.2 <- read_csv("~/plots/tef2-mch/6-20-22/modc-tef2-mch/6-20-22_modc_tef2-mch_attributes.csv")
-modc_cells.tef2mch.gfp.3 <- read_csv("~/plots/tef2-mch/8-4-22-calcufluor/mODC-tef2/8-4-22_modc_tef2-mch_attributes.csv") #this has budscar staining 
-cln2_cells.tef2mch.gfp.2 <- read_csv("~/plots/tef2-mch/6-20-22/cln2-tef2-mch/6-20-22_cln2_tef2-mch_attributes.csv")
-
-```
-
-#combining the old tef2-mch experiment data with the repeated experiments 
-```{r}
-tef2.mch.all <- tef2.old %>% 
-  bind_rows(.,bind_rows(modc_cells.tef2mch.gfp.2 %>% 
-                          mutate(degron = "mODC.2"),
-                        modc_cells.tef2mch.gfp.3 %>% 
-                          mutate(degron = "mODC.3"),
-                        cln2_cells.tef2mch.gfp.2 %>% 
-                          mutate(degron = "cln2.2")) %>% 
-              rename("gfpMeanBgAFsub" = "gfp.mean.bg.af.sub.new",
-                     "cell.id" = "unique.trackID") %>% 
-              mutate(red = "tef2-mCherry",
-                     treatment = "none") %>% 
-              filter(timepoint == 1)) %>% 
-  select(-time, -timepoint, -ln.gfp, -image,-ln.gfp.dif,-trackID)
-
-```
-
-```{r}
-tef2.mch.all.select <- tef2.mch.all %>% 
- select(cell.id,
-        area,
-        gfpMeanBgAFsub,
-        mcherryMeanBgAFsub,
-        degron,
-        red,
-        treatment,
-        experiment,
-        exp.field,
-         Elip_B,
-         Elip_C,
-         no.of.voxels,
-         pos.x,
-         pos.y,
-         spheracity,
-         volume, 
-        area.puncta,
-        pos.x.puncta,
-        pos.y.puncta,
-         rfp.mean.bg.sub,
-         dapi.mean.bg.sub,
-         rfp.mean.bg.sub.puncta,
-         dapi.mean.bg.sub.puncta,
-       no.bud.scars) %>% 
-  mutate(cell.id = paste0(cell.id ,"_",degron,"_",red,"_",treatment))
-```
-```{r}
-tef2.mch.all.select %>% 
-  write_csv(.,"~/plots/all_data/all_tef2-mch_attr.csv")
-```
 
 
 ##MG135 proteasome inhibition experiments
+DMSO
 ```{r}
-dmso_cell_attributes1 <- read.csv("~/plots/proteasome_inhibition/data/2-3-22/DMSO/2-3-22-GFP_mODC_DMSO_attributes.csv")
-dmso_cell_attributes2 <- read.csv("~/plots/proteasome_inhibition/data/4-1-22/DMSO/4-1-22-GFP_mODC_DMSO_attributes.csv")
+dmso_cell_attributes2 <- read.csv("../generate_dfs/proteasome_inhibition/data/4-1-22/DMSO/4-1-22-GFP_mODC_DMSO_attributes.csv")
 ```
 
 1uM
 ```{r}
-cell.info.1uM <- read.csv("~/plots/proteasome_inhibition/data/4-1-22/1uM/4-1-22-GFP_mODC_1uMMG132_attributes.csv")
+cell.info.1uM <- read.csv("../generate_dfs/proteasome_inhibition/data/4-1-22/1uM/4-1-22-GFP_mODC_1uMMG132_attributes.csv")
 ```
 
 2.5uM
 ```{r}
-cell.info.2.5uM <- read.csv("~/plots/proteasome_inhibition/data/4-1-22/2.5uM/4-1-22-GFP_mODC_2.5uMMG132_attributes.csv")
+cell.info.2.5uM <- read.csv("../generate_dfs/proteasome_inhibition/data/4-1-22/2.5uM/4-1-22-GFP_mODC_2.5uMMG132_attributes.csv")
 ```
 
 5uM
 ```{r}
 
-cell.info.5uM <- read.csv("~/plots/proteasome_inhibition/data/4-1-22/5uM/4-1-22-GFP_mODC_5uMMG132_attributes.csv")
-```
-
-50uM
-```{r}
-
-cell.info.50uM <- read.csv("~/plots/proteasome_inhibition/data/2-3-22/MG132_50uM/2-3-22-GFP_mODC_50uMMG132_attributes.csv")
+cell.info.5uM <- read.csv("../generate_dfs/proteasome_inhibition/data/4-1-22/5uM/4-1-22-GFP_mODC_5uMMG132_attributes.csv")
 ```
 
 Combined dataframes 
 ```{r}
-all.Prot.Inhi.info <- bind_rows(dmso_cell_attributes1 %>% 
-            mutate(treatment = "dmso1"), 
+all.Prot.Inhi.info <- bind_rows(
             dmso_cell_attributes2 %>% 
             mutate(treatment = "dmso2"),
             cell.info.1uM %>% 
@@ -247,10 +91,7 @@ all.Prot.Inhi.info <- bind_rows(dmso_cell_attributes1 %>%
             cell.info.2.5uM %>% 
                mutate(treatment = "2.5uM"),
             cell.info.5uM %>% 
-               mutate(treatment = "5uM"),
-            cell.info.50uM %>% 
-               mutate(treatment = "50uM")
-          ) %>% 
+               mutate(treatment = "5uM")) %>% 
   mutate(rfp.mean.bg.sub.puncta = ifelse(is.na(rfp.mean.bg.sub.puncta), 0, rfp.mean.bg.sub.puncta), 
          degron = "mODC",
          red = "pup1-rfp")
@@ -258,6 +99,6 @@ all.Prot.Inhi.info <- bind_rows(dmso_cell_attributes1 %>%
 
 ```{r}
 all.Prot.Inhi.info %>% 
-  write_csv(.,"~/plots/all_data/all_mg135_attr.csv")
+  write_csv(.,"all_data/all_mg135_attr.csv")
 ```
 
