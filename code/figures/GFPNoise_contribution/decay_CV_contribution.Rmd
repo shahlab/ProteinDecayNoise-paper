@@ -1,0 +1,86 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+data1 <- read.csv("/data/sukanya/paper/data/paper_pup1_param_cell.csv")
+```
+
+```{r}
+data1 <- data1 %>% 
+  mutate(t.half = log(2)/dy)
+```
+
+```{r}
+lm.decay.gfp <- data1 %>% 
+  split(.$degron) %>% 
+  map(.,function(a){
+    lm(a$gfp.mean.bg.af.sub.new ~ a$t.half)
+  })
+
+```
+
+```{r}
+data1 %>% 
+  ggplot(.,aes(x = t.half, y = gfp.mean.bg.af.sub.new))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  facet_wrap(~degron)
+```
+Noise contribution
+
+```{r}
+cov.data <- data1 %>% 
+  split(.$degron) %>% 
+  map(.,function(a){
+    cov(a$gfp.mean.bg.af.sub.new, a$t.half)
+  })
+
+```
+
+```{r}
+lm.est <- lm.decay.gfp %>% 
+  map(.,function(a){
+    a %>% broom::tidy()
+  }) %>% 
+  bind_rows(.id = "degron")
+
+```
+
+```{r}
+cv.decay.df <- data1 %>% 
+  split(.$degron) %>% 
+  map(.,function(a){
+    t.half.mean <- mean(a$t.half)
+    cov.est <- cov(a$t.half, a$gfp.mean.bg.af.sub.new)
+    gfp.mean <- mean(a$gfp.mean.bg.af.sub.new)
+    cv2 <- (sd(a$gfp.mean.bg.af.sub.new)/mean(a$gfp.mean.bg.af.sub.new))^2
+    data.frame(t.half.mean,
+               cov.est,
+               gfp.mean,
+               cv2)
+  }) %>% 
+  bind_rows(.id = "degron")
+
+```
+
+```{r}
+lm.est.df <- lm.est %>% dplyr::select(degron, term, estimate) %>% 
+  pivot_wider(values_from = estimate, names_from = term) %>% 
+  dplyr::rename("a" = "(Intercept)",
+                "b" = "a$t.half")
+
+```
+
+
+```{r}
+#gfp half life
+cv.decay.df %>% 
+  left_join(.,lm.est.df, by = "degron") %>% 
+  mutate(decay.cv2 = ((b*t.half.mean)/(a+b*t.half.mean))*(cov.est/(gfp.mean*t.half.mean)),
+         perc.decay = (decay.cv2/cv2)*100,
+         sqrt.perc = sqrt(decay.cv2/cv2)*100)
+
+```
+
