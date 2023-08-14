@@ -1,0 +1,788 @@
+---
+title: "4-1-22-DMSO"
+output: html_notebook
+---
+0.1% DMSO treated mODC cellls 
+```{r}
+library(optimx)
+library(data.table)
+library(tidyverse)
+library(reshape2)
+library(gganimate)
+library(ggridges)
+library(ggpubr)
+library(parallel)
+library(deSolve)
+library(minpack.lm)
+
+```
+
+
+#This is for reading in dataframes with the GFP (background and autofluor subtracted) intensities. 
+```{r}
+temp1 <- read.csv("~/plots/proteasome_inhibition/data/4-1-22/DMSO/gfp_mODCPest_DMSO_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2]) %>% 
+  # filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , exp.field) %>% 
+  split(.$cell.id)
+
+```
+
+Here I get the cell ids of cells which have less than 5 timepoints in my dataframe
+```{r}
+cellsWithLessThan5tps <- bind_rows(temp1) %>% 
+  group_by(cell.id) %>% 
+  tally() %>% 
+  filter(n < 5) %>%
+  pull(cell.id)
+
+```
+
+#filtering the cells out which have less than 5 tps 
+#only looking at the first 20 timepoints
+#only pick cellls which have all 31 timepoints
+
+```{r}
+cell.in.all31tp <- bind_rows(temp1) %>% 
+  filter(!(cell.id %in% cellsWithLessThan5tps)) %>% 
+  mutate(exp = str_split(exp.field, "_", simplify = T)[,1]) %>% 
+  filter(exp == "20min") %>% 
+  filter(image.no < 32) %>% 
+  group_by(cell.id) %>% 
+  tally() %>% 
+  filter(n == 31)
+
+#cells with data in more than 20 images
+cell.in.more.than.20 <- bind_rows(temp1) %>% 
+  filter(!(cell.id %in% cellsWithLessThan5tps)) %>% 
+  mutate(exp = str_split(exp.field, "_", simplify = T)[,1]) %>% 
+  filter(exp == "20min") %>% 
+  group_by(cell.id) %>% 
+  tally() %>% 
+  filter(n > 15)
+```
+
+Cells which have data in more than 5 timepoints
+```{r}
+gfp.filtered.cells <- bind_rows(temp1) %>% 
+  filter(!(cell.id %in% cellsWithLessThan5tps)) %>% 
+  mutate(exp = str_split(exp.field, "_", simplify = T)[,1]) %>% 
+  filter(exp == "20min") %>% 
+  split(.$cell.id)
+```
+
+remove cells which have increased gfp intensity in more than 5 timepoints
+```{r}
+cells.to.remove <- bind_rows(gfp.filtered.cells)  %>%   
+  group_by(cell.id) %>% 
+  mutate(rel.change = lead(gfpMeanBgAFsub)/lag(gfpMeanBgAFsub)) %>% 
+  filter(rel.change > 1,) %>% 
+  tally() %>% 
+  filter(n>5) 
+```
+
+cells with data in more than 15 timepoints
+```{r}
+list.of.cells <- gfp.filtered.cells %>% 
+  bind_rows() %>% 
+  filter(cell.id %in% cell.in.more.than.20$cell.id) %>% 
+  split(.$cell.id)
+```
+
+```{r}
+gfp.filtered.cells$`1000000000_20min_s5`
+```
+#saturation ODE 
+```{r}
+saturation.ode <- function(t,y,parms){ 
+  #t = time in the state
+  #y = estimate of the state (gfp intensity value)
+  #parms need to be a list of parameters
+   
+  #parameter values
+   kd <- parms$kd
+   k1 <- parms$k1
+   
+   #gfp intensities
+   gfp <- y
+   
+   #ODE
+   rate.gfp = -kd*gfp/(1+k1*gfp) #rate of change of gfp intensity
+    
+    return(list(rate.gfp))
+  }
+```
+
+#testing how ODE works 
+```{r}
+cinit <- list.of.cells$`1000002363_20min_s3`$gfpMeanBgAFsub[1] #initial gfp value
+
+ode(y = cinit,
+    times = gfp.filtered.cells$`1000002363_20min_s3`$delta.time/60,
+    func = saturation.ode,
+    parms = list(kd = 0.01*60, k1 = 0.04)) %>% 
+  as.data.frame() %>% 
+  rename("sat.ode" = "1") %>% 
+  bind_cols(.,list.of.cells$`1000002363_20min_s3`) %>% 
+  select(time, sat.ode, gfpMeanBgAFsub) %>% 
+  pivot_longer(names_to = "model", cols = 2:3) %>% 
+  ggplot(.,aes(x = time, y = value, color = model))+
+  geom_point()
+
+
+```
+
+#minimization function to be used with optim
+```{r}
+sat.ode.min.fn <- function(par, df){
+   
+   #predicted values using the ODE
+   sat.model <- ode(y = df$gfpMeanBgAFsub[1], 
+                    times = df$delta.time, 
+                    func = saturation.ode, 
+                    parms = list(kd = par[1], k1 = par[2])) %>% #estimate k1 for all the cells, so start with a fixed decay rate 
+     as.data.frame() %>% 
+     rename("sat.pred" = "1")
+   
+   
+   df.new <- df  %>%
+     mutate(model = sat.model$sat.pred/sat.model$sat.pred[1]) %>%
+     mutate(error = (I0_It - model) ^ 2) %>%
+     summarise(mean.error = mean(error))
+    
+    return(df.new$mean.error)
+  }
+```
+
+for one cell
+```{r}
+par.optim <- c(0.01,0.04)
+names(par.optim) <- c("kd","k1")
+df.temp <- list.of.cells$`1000000000_20min_s5` %>% 
+        mutate(image.no = image.no - 1) %>%
+        group_by(cell.id) %>%
+        mutate(
+          I0_It = gfpMeanBgAFsub / gfpMeanBgAFsub[1]
+        ) %>%
+        ungroup()
+      
+optimx(
+        par = par.optim,
+        #updated this line to match the initial db with exp.field when I am optimizing in a loop
+        fn = sat.ode.min.fn ,
+        method = "nls",
+        lower = c(0,0),
+        upper = c(1,1),
+        df = df.temp,
+        itnmax = 100000)
+```
+
+```{r}
+ode(y = df.temp$gfpMeanBgAFsub[1],
+    times = df.temp$delta.time/60,
+    func = saturation.ode,
+    parms = list(kd = 0.01190599*60, k1 = 0.1010736)) %>% 
+  as.data.frame() %>% 
+  rename("sat.ode" = "1") %>% 
+  bind_cols(.,df.temp) %>% 
+  select(time, sat.ode, gfpMeanBgAFsub) %>% 
+  pivot_longer(names_to = "model", cols = 2:3) %>% 
+  ggplot(.,aes(x = time, y = value, color = model))+
+  geom_point()
+```
+
+```{r}
+single.cell.ode.est <- mclapply(list.of.cells, function(a) {
+      par.optim <- c(0.01, 0.04)
+      
+      names(par.optim) <- c("kd", "k1")
+      
+      df <- a %>%
+        mutate(image.no = image.no - 1) %>%
+        group_by(cell.id) %>%
+        mutate(I0_It = gfpMeanBgAFsub / gfpMeanBgAFsub[1]
+        ) %>%
+        ungroup()
+      
+      optimx(
+        par = par.optim,
+        #updated this line to match the initial db with exp.field when I am optimizing in a loop
+        fn = sat.ode.min.fn ,
+        method = "L-BFGS-B",
+        lower = c(0, 0),
+        upper = c(1,1),
+        df = df,
+        itnmax = 100000
+      )
+    }, mc.cores = 40) %>%
+      bind_rows(.id = "cell.id")
+
+
+
+single.cell.ode.est
+
+```
+
+ODE predicted values 
+```{r}
+ode.pred <- lapply(list.of.cells, function(a){
+  ode.estimates <- single.cell.ode.est %>% filter(cell.id == a$cell.id) 
+  ode(y = a$gfpMeanBgAFsub[1], 
+                    times = a$delta.time, 
+                    func = saturation.ode, 
+                    parms = list(kd = ode.estimates$kd, 
+                                 k1 = ode.estimates$k1)) %>% #estimate k1 for all the cells, so start with a fixed decay rate 
+     as.data.frame() %>% 
+     rename("sat.pred" = "1")
+}) %>%
+  bind_rows(.id = "cell.id")
+```
+
+random cells
+```{r}
+rand.cells <- sample(unique(bind_rows(list.of.cells) %>% 
+                              filter(cell.id %in% cell.in.all31tp$cell.id) %>% 
+                              pull(cell.id)), size = 10)
+```
+
+#profiles
+```{r}
+ode.pred %>% 
+  left_join(.,bind_rows(list.of.cells) %>% rename("time" = "delta.time") %>% 
+              select(cell.id, gfpMeanBgAFsub, time), by = c("time", "cell.id")) %>% 
+  filter(cell.id %in% rand.cells) %>% 
+  pivot_longer(names_to = "model", cols = 3:4) %>% 
+  group_by(cell.id) %>% 
+  ggplot(.,aes(x = time, y = value, color = model))+
+  geom_point(alpha = 0.5)+
+  facet_wrap(~cell.id, scales = "free")
+  
+```
+
+```{r}
+ode.pred %>% 
+  left_join(.,bind_rows(list.of.cells) %>% rename("time" = "delta.time") %>% 
+              select(cell.id, gfpMeanBgAFsub, time,exp.field), by = c("time", "cell.id")) %>% 
+  # filter(cell.id %in% rand.cells) %>% 
+  pivot_longer(names_to = "model", cols = 3:4) %>% 
+  group_by(cell.id) %>% 
+  ggplot(.,aes(x = time, y = value, color = model))+
+  geom_point(alpha = 0.5)+
+  facet_wrap(~exp.field)
+```
+
+```{r}
+ode.pred %>% 
+  left_join(.,bind_rows(list.of.cells) %>% rename("time" = "delta.time") %>% 
+              select(cell.id, gfpMeanBgAFsub, time), by = c("time", "cell.id")) %>% 
+  ggplot(.,aes(x = sat.pred, y = gfpMeanBgAFsub))+
+  geom_point(alpha = 0.5)+
+  stat_cor()
+```
+
+estimates vs initial gfp intensity
+```{r}
+single.cell.ode.est %>% 
+  filter(convcode == 0) %>% 
+  select(cell.id, kd, k1) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% 
+              filter(delta.time == 0) %>% 
+              select(cell.id, gfpMeanBgAFsub), by = c("cell.id")) %>% 
+  ggplot(.,aes(x = gfpMeanBgAFsub, y = kd))+
+  geom_point(alpha = 0.5)+
+  stat_cor()
+
+single.cell.ode.est %>% 
+  filter(convcode == 0) %>% 
+  select(cell.id, kd, k1) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% 
+              filter(delta.time == 0) %>% 
+              select(cell.id, gfpMeanBgAFsub), by = c("cell.id")) %>% 
+  ggplot(.,aes(x = gfpMeanBgAFsub, y = k1))+
+  geom_point(alpha = 0.5)+
+  stat_cor()
+
+single.cell.ode.est %>% 
+  filter(convcode == 0) %>% 
+  select(cell.id, kd, k1) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% 
+              filter(delta.time == 0) %>% 
+              select(cell.id, gfpMeanBgAFsub), by = c("cell.id")) %>% 
+  ggplot(.,aes(x = k1, y = kd))+
+  geom_point(alpha = 0.5)+
+  stat_cor()
+```
+ 
+
+k1 distrbution 
+```{r}
+single.cell.ode.est %>% 
+  filter(convcode == 0) %>% 
+  select(cell.id, kd, k1) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% 
+              filter(delta.time == 0) %>% 
+              select(cell.id, gfpMeanBgAFsub), by = c("cell.id")) %>% 
+  ggplot(.,aes(x = k1))+
+  geom_density(aes(y = ..scaled..))
+```
+
+kd distribution
+```{r}
+single.cell.ode.est %>% 
+  filter(convcode == 0) %>% 
+  select(cell.id, kd, k1) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% 
+              filter(delta.time == 0) %>% 
+              select(cell.id, gfpMeanBgAFsub), by = c("cell.id")) %>% 
+  ggplot(.,aes(x= kd))+
+  geom_density(aes(y = ..scaled..))
+```
+ODE in mins 
+```{r}
+single.cell.ode.est.min <- mclapply(list.of.cells, function(a) {
+      par.optim <- c(0.01*60, 0)
+      
+      names(par.optim) <- c("kd", "k1")
+      
+      df <- a %>%
+        mutate(image.no = image.no - 1) %>%
+        group_by(cell.id) %>%
+        mutate(I0_It = gfpMeanBgAFsub / gfpMeanBgAFsub[1],
+               delta.time = delta.time/60
+        ) %>%
+        ungroup()
+      
+      optimx(
+        par = par.optim,
+        #updated this line to match the initial db with exp.field when I am optimizing in a loop
+        fn = sat.ode.min.fn ,
+        method = "L-BFGS-B",
+        lower = c(0, 0),
+        upper = c(60,Inf),
+        df = df,
+        itnmax = 100000
+      )
+    }, mc.cores = 40) %>%
+      bind_rows(.id = "cell.id")
+
+
+
+
+single.cell.ode.est.min %>% 
+  filter(!(cell.id %in% cells.to.remove$cell.id))
+```
+
+ODE predicted values 
+```{r}
+ode.pred.min <- lapply(list.of.cells, function(a){
+  ode.estimates <- single.cell.ode.est.min %>% filter(cell.id == a$cell.id) 
+  ode(y = a$gfpMeanBgAFsub[1], 
+                    times = a$delta.time/60, 
+                    func = saturation.ode, 
+                    parms = list(kd = ode.estimates$kd, 
+                                 k1 = ode.estimates$k1)) %>% #estimate k1 for all the cells, so start with a fixed decay rate 
+     as.data.frame() %>% 
+     rename("sat.pred" = "1")
+}) %>%
+  bind_rows(.id = "cell.id")
+```
+
+profiles
+```{r}
+ode.pred.min %>% 
+  left_join(.,bind_rows(list.of.cells) %>%
+              rename("time" = "delta.time") %>% 
+              mutate(time = time/60) %>% 
+              select(cell.id, gfpMeanBgAFsub, time), by = c("time", "cell.id")) %>% 
+  filter(cell.id %in% rand.cells) %>% 
+  pivot_longer(names_to = "model", cols = 3:4) %>% 
+  group_by(cell.id) %>% 
+  ggplot(.,aes(x = time, y = value, color = model))+
+  geom_point(alpha = 0.5)+
+  facet_wrap(~cell.id, scales = "free")
+```
+
+```{r}
+ode.pred.min %>% 
+  left_join(.,bind_rows(list.of.cells) %>% 
+              rename("time" = "delta.time") %>% 
+              mutate(time = time/60) %>%  
+              select(cell.id, gfpMeanBgAFsub, time), by = c("time", "cell.id")) %>% 
+  ggplot(.,aes(x = sat.pred, y = gfpMeanBgAFsub))+
+  geom_point(alpha = 0.5)+
+  stat_cor()
+```
+
+```{r}
+#kd vs gfp 
+single.cell.ode.est.min %>% 
+  filter(convcode == 0) %>% 
+  select(cell.id, kd, k1) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% 
+              filter(delta.time == 0) %>% 
+              select(cell.id, gfpMeanBgAFsub), by = c("cell.id")) %>% 
+  ggplot(.,aes(x = gfpMeanBgAFsub, y = kd))+
+  geom_point(alpha = 0.5)+
+  stat_cor()
+
+#k1 vs gfp
+single.cell.ode.est.min %>% 
+  filter(convcode == 0) %>% 
+  select(cell.id, kd, k1) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% 
+              filter(delta.time == 0) %>% 
+              select(cell.id, gfpMeanBgAFsub), by = c("cell.id")) %>% 
+  ggplot(.,aes(x = gfpMeanBgAFsub, y = k1))+
+  geom_point(alpha = 0.5)+
+  stat_cor()
+
+#k1 vs kd
+single.cell.ode.est.min %>% 
+  filter(convcode == 0) %>% 
+  select(cell.id, kd, k1) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% 
+              filter(delta.time == 0) %>% 
+              select(cell.id, gfpMeanBgAFsub), by = c("cell.id")) %>% 
+  ggplot(.,aes(x = k1, y = kd))+
+  geom_point(alpha = 0.5)+
+  stat_cor()
+```
+```{r}
+#k1 
+single.cell.ode.est.min %>% 
+  filter(convcode == 0) %>% 
+  select(cell.id, kd, k1) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% 
+              filter(delta.time == 0) %>% 
+              select(cell.id, gfpMeanBgAFsub), by = c("cell.id")) %>% 
+  ggplot(.,aes(x = k1))+
+  geom_density(aes(y = ..scaled..))
+
+#kd
+single.cell.ode.est.min %>% 
+  filter(convcode == 0) %>% 
+  select(cell.id, kd, k1) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% 
+              filter(delta.time == 0) %>% 
+              select(cell.id, gfpMeanBgAFsub), by = c("cell.id")) %>% 
+  ggplot(.,aes(x = kd))+
+  geom_density(aes(y = ..scaled..))
+```
+
+
+
+using nls.lm for parameter estimation 
+```{r}
+sat.ode.min.fn.nlsLM <- function(par, df){
+   
+   #predicted values using the ODE
+   sat.model <- ode(y = df$gfpMeanBgAFsub[1], 
+                    times = df$delta.time, 
+                    func = saturation.ode, 
+                    parms = list(kd = par[1], k1 = par[2])) %>% #estimate k1 for all the cells, so start with a fixed decay rate 
+     as.data.frame() %>% 
+     rename("sat.pred" = "1")
+   
+   
+   df.new <- df  %>%
+     mutate(model = sat.model$sat.pred/sat.model$sat.pred[1]) %>%
+     mutate(res = I0_It - model) 
+    
+    return(df.new$res)
+  }
+```
+
+nls.lm with initial parameters at 0.01 * 60 for kd and at 0.04 for k1 
+```{r}
+#initial parameter 
+ode.parm <- c(0.01*60,0.04)
+names(ode.parm) <- c("kd" ,"k1")
+
+
+cells.nlsLM <- mclapply(list.of.cells, function(a){
+  df <- a %>%
+        mutate(image.no = image.no - 1) %>%
+        group_by(cell.id) %>%
+        mutate(I0_It = gfpMeanBgAFsub / gfpMeanBgAFsub[1]
+        ) %>%
+        ungroup()
+  
+  nls.lm(par = ode.parm, 
+        lower = c(0,0),
+       upper = c(60, Inf),
+        fn = sat.ode.min.fn.nlsLM,
+       df = df %>%  
+         mutate(delta.time = delta.time/60))
+}, mc.cores = 40)
+```
+
+
+```{r}
+#get the parameter values 
+temp <- lapply(cells.nlsLM, function(a){
+  a$par
+}) %>% bind_rows(.id = "cell.id")
+
+#cells that 
+cellid.conv <- temp %>% filter(kd < 60) %>% pull(cell.id)
+
+#summary objects 
+temp.summary <- lapply(cells.nlsLM, function(a){
+  try(a %>% summary())
+})
+
+#coefficients
+saturation.est <- lapply(temp.summary, function(a){
+  a["coefficients"] %>% 
+    as.data.frame() %>% 
+    rownames_to_column("par")
+}) %>% bind_rows(.id = "cell.id") 
+
+temp.cell.summ <- cells.nlsLM$`1000000000_20min_s5` %>% summary()
+
+temp.cell.summ$sigma
+
+```
+
+
+```{r}
+temp %>% 
+  filter(kd < 60) %>% 
+  ggplot(.,aes(x = kd))+
+  geom_density()+
+  scale_x_log10()
+
+temp %>% 
+  filter(kd < 60) %>% 
+  ggplot(.,aes(x = k1))+
+  geom_density()+
+  scale_x_log10()
+
+```
+exponential estimates using lm
+```{r}
+exp.model.dmso.fx.int <- mclapply(list.of.cells, function(a){
+  lm(log(ratio.gfp) ~ delta.time + 0,
+     data = a %>% 
+       mutate(ratio.gfp = gfpMeanBgAFsub/gfpMeanBgAFsub[1],
+              delta.time = delta.time/60))
+},mc.cores = 40)
+
+df.exp.dmso.fx.int <- lapply(exp.model.dmso.fx.int, tidy) %>% 
+  bind_rows(.id = "cell.id")
+
+df.exp.dmso.fx.int.stat <- lapply(exp.model.dmso.fx.int, glance) %>% 
+  bind_rows(.id = "cell.id")
+```
+
+```{r}
+df.exp.dmso.fx.int %>% 
+  filter(!(cell.id %in% cells.to.remove$cell.id)) %>% 
+  select(cell.id, estimate) %>% 
+  mutate(estimate = -estimate) %>% 
+  rename("linear.kd" = "estimate") %>% 
+  left_join(.,temp, by = "cell.id") %>%
+  left_join(.,saturation.est %>% 
+              filter(par == "k1") %>%
+              select(cell.id, coefficients.Pr...t..), by = "cell.id") %>% 
+  filter(kd < 60) %>% 
+  ggplot(.,aes(x = linear.kd , y = kd , color = coefficients.Pr...t.. < 0.05))+
+  geom_point()+
+  scale_x_log10()+
+  scale_y_log10()+
+  geom_abline(slope = 1)
+
+#start at 0 for k1, 
+#kd upper = 2 
+#redo the analysis; keep track of cells that don't converge 
+
+#ratio kd (new estimates) /kd_linear vs no. of timepoints
+```
+compare the saturaton estimates from optim() vs nls.lm()
+```{r}
+single.cell.ode.est.min %>% 
+  filter(!(cell.id %in% cells.to.remove$cell.id),
+         convcode == 0) %>% 
+  select(cell.id, kd, k1) %>% 
+  rename("kd.ode.opt" = "kd",
+         "k1.ode.opt" = "k1") %>% 
+  left_join(.,temp, by = "cell.id") %>%
+  left_join(.,saturation.est %>% 
+              filter(par == "k1") %>%
+              select(cell.id, coefficients.Pr...t..), by = "cell.id") %>% 
+  filter(kd < 60) %>% 
+  ggplot(.,aes(x = kd.ode.opt , y = kd , color = coefficients.Pr...t.. < 0.05))+
+  geom_point()+
+  scale_x_log10()+
+  scale_y_log10()+
+  geom_abline(slope = 1)
+```
+
+```{r}
+left_join(.,bind_rows(list.of.cells) %>%
+              rename("time" = "delta.time") %>% 
+              mutate(time = time/60) %>% 
+              select(cell.id, gfpMeanBgAFsub, time), by = c("time", "cell.id")) %>% 
+  filter(cell.id %in% rand.cells)
+```
+
+re-evaluate the parameters of the ODE using the different initial conditions for k1 and kd upper 
+```{r}
+#initial parameter 
+ode.parm.2 <- c(0.01*60,0)
+names(ode.parm.2) <- c("kd" ,"k1")
+
+
+cells.nlsLM.2 <- mclapply(list.of.cells, function(a){
+  df <- a %>%
+        mutate(image.no = image.no - 1) %>%
+        group_by(cell.id) %>%
+        mutate(I0_It = gfpMeanBgAFsub / gfpMeanBgAFsub[1]
+        ) %>%
+        ungroup()
+  
+  nls.lm(par = ode.parm, 
+        lower = c(0,0),
+       upper = c(2, Inf),
+        fn = sat.ode.min.fn.nlsLM,
+       df = df %>%  
+         mutate(delta.time = delta.time/60))
+}, mc.cores = 40)
+```
+
+
+```{r}
+#get the parameter values 
+temp.2 <- lapply(cells.nlsLM.2, function(a){
+  a$par
+}) %>% bind_rows(.id = "cell.id")
+
+#summary objects 
+temp.summary.2 <- lapply(cells.nlsLM.2, function(a){
+  try(a %>% summary())
+})
+
+#coefficients
+saturation.est.2 <- lapply(temp.summary.2, function(a){
+  a["coefficients"] %>% 
+    as.data.frame() %>% 
+    rownames_to_column("par")
+}) %>% bind_rows(.id = "cell.id") 
+
+saturation.est.2 %>% 
+  split(.$par)
+
+cells.nlsLM.2$`1000000005_20min_s8` 
+```
+
+```{r}
+df.exp.dmso.fx.int %>% 
+  select(cell.id, estimate) %>% 
+  mutate(estimate = -estimate) %>% 
+  rename("linear.kd" = "estimate") %>% 
+  left_join(.,temp.2, by = "cell.id") %>%
+  left_join(.,saturation.est.2 %>% 
+              filter(par == "k1") %>%
+              select(cell.id, coefficients.Pr...t..), by = "cell.id") %>% 
+  filter(kd < 60) %>% 
+  ggplot(.,aes(x = linear.kd , y = kd , color = coefficients.Pr...t.. < 0.05))+
+  geom_point()+
+  geom_abline(slope = 1)
+```
+
+```{r}
+no.of.tps <- bind_rows(list.of.cells) %>% 
+  group_by(cell.id) %>% 
+  tally()
+```
+
+```{r}
+df.exp.dmso.fx.int %>% 
+  select(cell.id, estimate) %>% 
+  mutate(estimate = -estimate) %>% 
+  rename("linear.kd" = "estimate") %>% 
+  left_join(.,temp.2, by = "cell.id") %>%
+  left_join(.,saturation.est.2 %>% 
+              filter(par == "k1") %>%
+              select(cell.id, coefficients.Pr...t..), by = "cell.id") %>% 
+  left_join(.,no.of.tps) %>% 
+  ggplot(.,aes(x = linear.kd ,y = kd , color = n))+
+  geom_point()
+```
+
+```{r}
+df.exp.dmso.fx.int %>% 
+  select(cell.id, estimate) %>% 
+  mutate(estimate = -estimate) %>% 
+  rename("linear.kd" = "estimate") %>% 
+  left_join(.,temp.2, by = "cell.id") %>%
+  left_join(.,saturation.est.2 %>% 
+              filter(par == "k1") %>%
+              select(cell.id, coefficients.Pr...t..), by = "cell.id") %>% 
+  left_join(.,no.of.tps) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% 
+              filter(delta.time == 0) %>% 
+              select(cell.id, gfpMeanBgAFsub), by = "cell.id") %>% 
+  ggplot(.,aes(x = gfpMeanBgAFsub, y = kd, color = coefficients.Pr...t.. < 0.05))+
+  geom_point()+
+  stat_cor()
+
+df.exp.dmso.fx.int %>% 
+  select(cell.id, estimate) %>% 
+  mutate(estimate = -estimate) %>% 
+  rename("linear.kd" = "estimate") %>% 
+  left_join(.,temp.2, by = "cell.id") %>%
+  left_join(.,saturation.est.2 %>% 
+              filter(par == "kd") %>%
+              select(cell.id, coefficients.Pr...t..), by = "cell.id") %>% 
+  left_join(.,no.of.tps) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% 
+              filter(delta.time == 0) %>% 
+              select(cell.id, gfpMeanBgAFsub), by = "cell.id") %>% 
+  ggplot(.,aes(x = gfpMeanBgAFsub, y = k1, color = coefficients.Pr...t.. < 0.05))+
+  geom_point()+
+  stat_cor()
+
+```
+
+```{r}
+df.exp.dmso.fx.int %>% 
+  select(cell.id, estimate) %>% 
+  mutate(estimate = -estimate) %>% 
+  rename("linear.kd" = "estimate") %>% 
+  left_join(.,temp.2, by = "cell.id") %>%
+  left_join(.,saturation.est.2 %>% 
+              filter(par == "k1") %>%
+              select(cell.id, coefficients.Pr...t..), by = "cell.id") %>% 
+  left_join(.,no.of.tps) %>% 
+  left_join(.,bind_rows(list.of.cells) %>% 
+              filter(delta.time == 0) %>% 
+              select(cell.id, gfpMeanBgAFsub), by = "cell.id") %>% 
+  ggplot(.,aes(x = gfpMeanBgAFsub, y = linear.kd, color = coefficients.Pr...t.. < 0.05))+
+  geom_point()+
+  stat_cor()
+```
+
+compare the 
+```{r}
+single.cell.ode.est.min %>% 
+  filter(!(cell.id %in% cells.to.remove$cell.id),
+         convcode == 0) %>% 
+  select(cell.id, kd, k1) %>% 
+  rename("kd.ode.opt" = "kd",
+         "k1.ode.opt" = "k1") %>% 
+  left_join(.,temp.2, by = "cell.id") %>%
+  left_join(.,saturation.est.2 %>% 
+              filter(par == "k1") %>%
+              select(cell.id, coefficients.Pr...t..), by = "cell.id") %>% 
+  filter(kd == 2) %>% 
+  ggplot(.,aes(x = kd.ode.opt , y = kd , color = coefficients.Pr...t.. < 0.05))+
+  geom_point()+
+  scale_x_log10()+
+  scale_y_log10()+
+  geom_abline(slope = 1)
+```
+

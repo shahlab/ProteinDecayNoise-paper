@@ -1,0 +1,530 @@
+---
+title: "4-1-22-DMSO"
+output: html_notebook
+---
+0.1% DMSO treated mODC cellls 
+```{r}
+library(optimx)
+library(data.table)
+library(tidyverse)
+library(reshape2)
+library(gganimate)
+library(ggridges)
+library(ggpubr)
+library(parallel)
+
+```
+
+
+#This is for reading in dataframes with the GFP (background and autofluor subtracted) intensities. 
+```{r}
+temp1 <- read.csv("~/plots/proteasome_inhibition/data/4-1-22/DMSO/gfp_mODCPest_DMSO_filtered.csv") %>% 
+  mutate(exp = str_split(cell.id, pattern = "_" , simplify = TRUE)[,2]) %>% 
+  # filter(exp == "20min") %>% 
+  select(cell.id,
+         delta.time,
+         gfpMeanBgAFsub, 
+         image.no , exp.field) %>% 
+  split(.$cell.id)
+
+```
+
+Here I get the cell ids of cells which have less than 5 timepoints in my dataframe
+```{r}
+cellsWithLessThan5tps <- bind_rows(temp1) %>% 
+  group_by(cell.id) %>% 
+  tally() %>% 
+  filter(n < 5) %>%
+  pull(cell.id)
+
+```
+
+#filtering the cells out which have less than 5 tps 
+#only looking at the first 20 timepoints
+#only pick cellls which have all 31 timepoints
+
+```{r}
+cell.in.all31tp <- bind_rows(temp1) %>% 
+  filter(!(cell.id %in% cellsWithLessThan5tps)) %>% 
+  mutate(exp = str_split(exp.field, "_", simplify = T)[,1]) %>% 
+  filter(exp == "20min") %>% 
+  filter(image.no < 32) %>% 
+  group_by(cell.id) %>% 
+  tally() %>% 
+  filter(n == 31)
+
+#cells with data in more than 20 images
+cell.in.more.than.20 <- bind_rows(temp1) %>% 
+  filter(!(cell.id %in% cellsWithLessThan5tps)) %>% 
+  mutate(exp = str_split(exp.field, "_", simplify = T)[,1]) %>% 
+  filter(exp == "20min") %>% 
+  group_by(cell.id) %>% 
+  tally() %>% 
+  filter(n > 15)
+```
+
+Cells which have data in more than 5 timepoints
+```{r}
+gfp.filtered.cells <- bind_rows(temp1) %>% 
+  filter(!(cell.id %in% cellsWithLessThan5tps)) %>% 
+  mutate(exp = str_split(exp.field, "_", simplify = T)[,1]) %>% 
+  filter(exp == "20min") %>% 
+  split(.$cell.id)
+```
+
+```{r}
+list.of.cells.exp <- bind_rows(gfp.filtered.cells) %>% 
+  filter(cell.id %in% cell.in.more.than.20$cell.id) %>% 
+  split(.$cell.id)
+```
+
+```{r}
+bind_rows(list.of.cells.exp) %>% 
+  group_by(cell.id) %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  ggplot(.,aes(x = delta.time , y = log(It_I0), group = cell.id))+
+  geom_line(alpha = 0.2)
+
+bind_rows(list.of.cells.exp) %>% 
+  group_by(cell.id) %>% 
+  mutate(It_I0 = gfpMeanBgAFsub/gfpMeanBgAFsub[1]) %>% 
+  ggplot(.,aes(x = delta.time , y = gfpMeanBgAFsub, group = cell.id))+
+  geom_line(alpha = 0.2)
+```
+
+
+
+```{r}
+# gfp.filtered.cells.last.5 <- bind_rows(temp1) %>% 
+#   filter(cell.id %in% cell.in.all31tp$cell.id) %>% 
+#   filter(image.no %in% c(25:31)) %>% 
+#   mutate(exp = str_split(exp.field, "_", simplify = T)[,1]) %>% 
+#   filter(exp == "20min") %>% 
+#   split(.$cell.id)
+# 
+# 
+# gfp.filtered.cells.last.10 <- bind_rows(temp1) %>% 
+#   filter(cell.id %in% cell.in.all31tp$cell.id) %>% 
+#   filter(image.no %in% c(20:31)) %>% 
+#   mutate(exp = str_split(exp.field, "_", simplify = T)[,1]) %>% 
+#   filter(exp == "20min") %>% 
+#   split(.$cell.id)
+# 
+# gfp.filtered.cells.last.15 <- bind_rows(temp1) %>% 
+#   filter(cell.id %in% cell.in.all31tp$cell.id) %>% 
+#   filter(image.no %in% c(15:31)) %>% 
+#   mutate(exp = str_split(exp.field, "_", simplify = T)[,1]) %>% 
+#   filter(exp == "20min") %>% 
+#   split(.$cell.id)
+# 
+# gfp.filtered.cells.last.20 <- bind_rows(temp1) %>% 
+#   filter(cell.id %in% cell.in.all31tp$cell.id) %>% 
+#   filter(image.no %in% c(10:31)) %>% 
+#   mutate(exp = str_split(exp.field, "_", simplify = T)[,1]) %>% 
+#   filter(exp == "20min") %>% 
+#   split(.$cell.id)
+# 
+# gfp.filtered.cells.last.25 <- bind_rows(temp1) %>% 
+#   filter(cell.id %in% cell.in.all31tp$cell.id) %>% 
+#   filter(image.no %in% c(5:31)) %>% 
+#   mutate(exp = str_split(exp.field, "_", simplify = T)[,1]) %>% 
+#   filter(exp == "20min") %>% 
+#   split(.$cell.id)
+# 
+# gfp.cell.list <- list(
+#     gfp.filtered.cells,
+#     gfp.filtered.cells.last.5,
+#     gfp.filtered.cells.last.10,
+#     gfp.filtered.cells.last.15,
+#     gfp.filtered.cells.last.20,
+#     gfp.filtered.cells.last.25
+#   )
+# names(gfp.cell.list) <- c("all","last.5","last.10","last.15","last.20","last25")
+```
+
+#equation without f and dm 
+```{r}
+
+mechanistic.fn.woFdm <- function(par, df){
+   # f <- par[1]
+   dy <- par[1]
+   # dm <- (0.28+0.18 +1.2)/3 *10^-3
+   df.new <- df  %>%
+     mutate(model = exp(-dy * delta.time)) %>%
+     mutate(error = (I0_It - model) ^ 2) %>%
+     summarise(mean.error = mean(error))
+    
+    return(df.new$mean.error)
+  }
+```
+
+```{r}
+single.cell.dy.list <- mclapply(list.of.cells.exp, function(a) {
+      par.optim <- c(0.05005*60)
+      
+      names(par.optim) <- c("dy")
+      
+      df <- a %>%
+        mutate(image.no = image.no - 1) %>%
+        group_by(cell.id) %>%
+        mutate(
+          I0_It = gfpMeanBgAFsub / gfpMeanBgAFsub[1],
+          delta.time = delta.time/60
+        ) %>%
+        ungroup()
+      
+      optimx(
+        par = par.optim,
+        #updated this line to match the initial db with exp.field when I am optimizing in a loop
+        fn = mechanistic.fn.woFdm ,
+        method = "L-BFGS-B",
+        lower = c(0.0001*60),
+        upper = c(0.1*60),
+        df = df,
+        itnmax = 100000
+      )
+    }, mc.cores = 40) %>%
+      bind_rows(.id = "cell.id")
+
+
+
+single.cell.dy.list 
+
+```
+
+```{r}
+#save the data frame 
+write_csv(x = single.cell.dy.list %>% filter(no.of.timepoints == "all"), file = "~/plots/mechanistic_modelling/proteasome_inhibition/2-3-22/dmso/parameters/new/single_cell_dy.csv")
+
+write_csv(x = single.cell.dy.list %>% filter(no.of.timepoints == "last.5"), file = "~/plots/mechanistic_modelling/proteasome_inhibition/2-3-22/dmso/parameters/new/single_cell_dy_last5.csv")
+
+write_csv(x = single.cell.dy.list %>% filter(no.of.timepoints == "last.10"), file = "~/plots/mechanistic_modelling/proteasome_inhibition/2-3-22/dmso/parameters/new/single_cell_dy_last10.csv")
+
+write_csv(x = single.cell.dy.list %>% filter(no.of.timepoints == "last.15"), file = "~/plots/mechanistic_modelling/proteasome_inhibition/2-3-22/dmso/parameters/new/single_cell_dy_last15.csv")
+
+write_csv(x = single.cell.dy.list %>% filter(no.of.timepoints == "last.20"), file = "~/plots/mechanistic_modelling/proteasome_inhibition/2-3-22/dmso/parameters/new/single_cell_dy_last20.csv")
+
+write_csv(x = single.cell.dy.list %>% filter(no.of.timepoints == "last25"), file = "~/plots/mechanistic_modelling/proteasome_inhibition/2-3-22/dmso/parameters/new/single_cell_dy_last25.csv")
+
+
+```
+
+No. of timepoints each cell has data in 
+```{r}
+no.datapoints <- bind_rows(gfp.filtered.cells) %>% 
+  filter(image.no < 32) %>% 
+  group_by(cell.id) %>% 
+  tally()
+```
+
+```{r}
+single.cell.dy.list <- bind_rows(read.csv("~/plots/mechanistic_modelling/proteasome_inhibition/2-3-22/dmso/parameters/new/single_cell_dy.csv"),
+          read.csv("~/plots/mechanistic_modelling/proteasome_inhibition/2-3-22/dmso/parameters/new/single_cell_dy_last5.csv"),
+          read.csv("~/plots/mechanistic_modelling/proteasome_inhibition/2-3-22/dmso/parameters/new/single_cell_dy_last10.csv"),
+          read.csv("~/plots/mechanistic_modelling/proteasome_inhibition/2-3-22/dmso/parameters/new/single_cell_dy_last15.csv"),
+          read.csv("~/plots/mechanistic_modelling/proteasome_inhibition/2-3-22/dmso/parameters/new/single_cell_dy_last20.csv"),
+          read.csv("~/plots/mechanistic_modelling/proteasome_inhibition/2-3-22/dmso/parameters/new/single_cell_dy_last25.csv"))
+```
+
+#no. of timepoints vs dy from mechanistic model
+```{r}
+box.dy.n <- single.cell.dy.list %>% 
+  filter(convcode == 0, 
+         no.of.timepoints == "all",
+         dy < 3) %>% 
+  left_join(no.datapoints, . , by = "cell.id") %>% 
+  left_join(.,gfp.filtered.cells %>% 
+              bind_rows() %>% 
+              filter(image.no == 1), by = "cell.id") %>% 
+  select(cell.id, n, dy, gfpMeanBgAFsub , no.of.timepoints) %>% 
+  ggplot(.,aes(x = factor(n, levels = 5:31), y = dy) )+
+  geom_boxplot()+
+  theme(legend.position = "top") 
+
+
+ggsave(plot = box.dy.n,filename = "dy_noTPS_boxplot.png", path = "~/plots/mechanistic_modelling/proteasome_inhibition/2-3-22/dmso/figures/", width = 13, height = 8)
+  
+```
+
+#no. of timepoints vs gfp mean intensity
+```{r}
+box.gfpMean.noTPS <- single.cell.dy.list %>% 
+  filter(convcode == 0, 
+         no.of.timepoints == "all") %>% 
+  left_join(no.datapoints, . , by = "cell.id") %>% 
+  left_join(.,gfp.filtered.cells %>% 
+              bind_rows() %>% 
+              filter(image.no == 1), by = "cell.id") %>% 
+  select(cell.id, n, dy, gfpMeanBgAFsub , no.of.timepoints) %>% 
+  ggplot(.,aes(x = factor(n, levels = 5:31), y = gfpMeanBgAFsub) )+
+  geom_boxplot()+
+  theme(legend.position = "top") 
+
+ggsave(plot = box.gfpMean.noTPS ,filename = "gfpMean_noTPS_boxplot.png", path = "~/plots/mechanistic_modelling/proteasome_inhibition/2-3-22/dmso/figures/", width = 13, height = 8)
+
+```
+
+#no. of timepoints vs dy + boxplots of dys from the data from last 5,10,15,20,25 data points
+```{r}
+box.dy.last.n <- single.cell.dy.list %>% 
+  filter(convcode == 0, dy < 3) %>% 
+  filter(cell.id %in% cell.in.all31tp$cell.id) %>% 
+  # filter(!(no.of.timepoints == "all")) %>% 
+  left_join(.,no.datapoints, by = "cell.id") %>% 
+  left_join(.,gfp.filtered.cells %>% 
+              bind_rows() %>% 
+              filter(image.no == 1), by = "cell.id") %>% 
+  select(cell.id, n, dy, gfpMeanBgAFsub , no.of.timepoints) %>% 
+  ggplot(.,aes(x = factor(no.of.timepoints, levels = c("last.5","last.10","last.15","last.20","last25", "all")), y = dy) )+
+  geom_boxplot()+
+  theme(legend.position = "top") 
+
+ggsave(filename = "dy_last_timepoints.png", plot = box.dy.last.n, path = "~/plots/mechanistic_modelling/proteasome_inhibition/2-3-22/dmso/figures/", width = 13, height = 8 )
+
+```
+
+```{r}
+ single.cell.dy.list %>% 
+  filter(convcode == 0, 
+         no.of.timepoints == "all",
+         dy < 3) %>% 
+  left_join(no.datapoints, . , by = "cell.id") %>% 
+  left_join(.,gfp.filtered.cells %>% 
+              bind_rows() %>% 
+              filter(image.no == 1), by = "cell.id") %>% 
+  select(cell.id, n, dy, gfpMeanBgAFsub , no.of.timepoints) %>% 
+  ggplot(.,aes(y = dy, x = gfpMeanBgAFsub) )+
+  geom_point()+
+  scale_x_log10()+
+  scale_y_log10()+
+  theme(legend.position = "top")+
+  stat_cor()
+```
+
+```{r}
+bind_rows(gfp.filtered.cells) %>% 
+            filter(cell.id %in% cell.in.all31tp$cell.id) %>% 
+  ggplot(.,aes(x = delta.time , y = gfpMeanBgAFsub, group = cell.id))+
+  geom_line(alpha = 0.4)+
+  facet_wrap(~exp.field)
+```
+
+remove cells 
+```{r}
+cells.to.remove <- bind_rows(gfp.filtered.cells)  %>%   
+  group_by(cell.id) %>% 
+  filter(image.no < 32) %>% 
+  mutate(rel.change = lead(gfpMeanBgAFsub)/lag(gfpMeanBgAFsub)) %>% 
+  filter(rel.change > 1,) %>% 
+  tally() %>% 
+  filter(n>5) 
+```
+
+
+dGFP/dt using initial 5 timepoints
+```{r}
+df.for.lm.2 <- bind_rows(gfp.filtered.cells) %>%
+  filter(!(cell.id %in% cells.to.remove$cell.id)) %>% 
+  filter(cell.id %in% cell.in.more.than.20$cell.id) %>% 
+  split(.$cell.id)
+```
+
+```{r}
+df.for.lm.2$`1000000000_20min_s5`
+```
+
+#slopes using first 5 timepoints
+```{r}
+linear.model.dmso <- mclapply(df.for.lm.2, function(a){
+  lm(gfpMeanBgAFsub ~ delta.time , data = a %>% filter(image.no < 6))
+},mc.cores = 40)
+
+df.estimates.dmso <- lapply(linear.model.dmso, tidy) %>% 
+  bind_rows(.id = "cell.id")
+```
+
+using all the timepoints
+```{r}
+exp.model.dmso <- mclapply(df.for.lm.2, function(a){
+  lm(log(gfpMeanBgAFsub) ~ delta.time, data = a %>% mutate(ratio.gfp = gfpMeanBgAFsub/gfpMeanBgAFsub[1]))
+},mc.cores = 40)
+
+df.exp.dmso <- lapply(exp.model.dmso, tidy) %>% 
+  bind_rows(.id = "cell.id")
+
+#Fixed intercept
+exp.model.dmso.fx.int <- mclapply(df.for.lm.2, function(a){
+  lm(log(ratio.gfp) ~ delta.time + 0, data = a %>% mutate(ratio.gfp = gfpMeanBgAFsub/gfpMeanBgAFsub[1]))
+},mc.cores = 40)
+
+df.exp.dmso.fx.int <- lapply(exp.model.dmso.fx.int, tidy) %>% 
+  bind_rows(.id = "cell.id")
+```
+
+```{r}
+#fixed intercept
+ df.for.lm.2 %>%
+  bind_rows() %>% 
+  filter(delta.time == 0) %>% 
+  select(cell.id , gfpMeanBgAFsub) %>% 
+  left_join(.,df.exp.dmso.fx.int %>% 
+              filter(term == "delta.time"), by = "cell.id") %>% 
+  ggplot(.,aes(x = gfpMeanBgAFsub, y = -estimate))+
+  geom_point()+
+  stat_cor()+
+  geom_smooth(method = "lm")+
+  ylab("decay rate")+
+  xlab("GFP intensity at t =0")
+
+#free intercept
+df.for.lm.2 %>%
+  bind_rows() %>% 
+  filter(delta.time == 0) %>% 
+  select(cell.id , gfpMeanBgAFsub) %>% 
+  left_join(.,df.exp.dmso %>% 
+              filter(term == "delta.time"), by = "cell.id") %>% 
+  group_by(cell.id) %>% 
+  ggplot(.,aes(x = gfpMeanBgAFsub, y = -estimate/gfpMeanBgAFsub[1] , group = cell.id))+
+  geom_point()+
+  stat_cor()+
+  geom_smooth(method = "lm")+
+  ylab("decay rate")+
+  xlab("GFP intensity at t =0")
+```
+fit the saturation model, and compare the fits. 
+```{r}
+
+```
+
+
+```{r}
+cell.info.dmso <- read.csv("~/plots/proteasome_inhibition/data/4-1-22/DMSO/4-1-22-GFP_mODC_DMSO_attributes.csv")
+```
+
+
+```{r}
+df.for.lm.2 %>%
+  bind_rows() %>% 
+  filter(delta.time == 0) %>% 
+  select(cell.id , gfpMeanBgAFsub) %>% 
+  left_join(.,df.estimates.dmso %>% 
+              filter(term == "delta.time"), by = "cell.id") %>% 
+  left_join(.,cell.info.dmso %>% rename("cell.id" = "unique.trackID"), by = "cell.id") %>% 
+  mutate(slope.gfp.int = estimate/gfpMeanBgAFsub) %>% 
+  filter(estimate < 0) %>% 
+  ggplot(.,aes(x = gfpMeanBgAFsub, y = -slope.gfp.int))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  stat_cor()+
+  ylab("-dGFP/dt/GFP")+
+  xlab("GFP intensity at t = 0")+
+  scale_x_log10()+
+  scale_y_log10()
+```
+
+```{r}
+df.for.lm.2 %>%
+  bind_rows() %>% 
+  filter(delta.time == 0) %>% 
+  select(cell.id , gfpMeanBgAFsub) %>% 
+  filter(gfpMeanBgAFsub > 100) %>% 
+  left_join(.,df.estimates.dmso %>% 
+              filter(term == "delta.time"), by = "cell.id") %>% 
+  left_join(.,cell.info.dmso %>% rename("cell.id" = "unique.trackID"), by = "cell.id") %>% 
+  mutate(slope.gfp.int = estimate/gfpMeanBgAFsub) %>% 
+  filter(estimate < 0) %>% 
+  ggplot(.,aes(x = gfpMeanBgAFsub, y = -slope.gfp.int))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  stat_cor()+
+  ylab("-dGFP/dt/GFP")+
+  xlab("GFP intensity at t = 0")
+```
+
+
+```{r}
+df.for.lm.2 %>%
+  bind_rows() %>% 
+  filter(delta.time == 0) %>% 
+  select(cell.id , gfpMeanBgAFsub) %>% 
+  left_join(.,df.estimates.dmso %>% 
+              filter(term == "delta.time"), by = "cell.id") %>% 
+  left_join(.,cell.info.dmso %>% rename("cell.id" = "unique.trackID"), by = "cell.id") %>% 
+  mutate(slope.gfp.int = estimate/gfpMeanBgAFsub) %>% 
+  filter(estimate < 0) %>% 
+  ggplot(.,aes(x = no.of.voxels, y = -slope.gfp.int))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  stat_cor()+
+  ylab("-dGFP/dt/GFP")+
+  xlab("no. of voxels")
+```
+
+```{r}
+df.for.lm.2 %>%
+  bind_rows() %>% 
+  filter(delta.time == 0) %>% 
+  select(cell.id , gfpMeanBgAFsub) %>% 
+  left_join(.,df.estimates.dmso %>% 
+              filter(term == "delta.time"), by = "cell.id") %>% 
+  left_join(.,cell.info.dmso %>% rename("cell.id" = "unique.trackID"), by = "cell.id") %>% 
+  mutate(slope.gfp.int = estimate/gfpMeanBgAFsub) %>% 
+  filter(estimate < 0) %>% 
+  ggplot(.,aes(x = dapi.mean.bg.sub, y = -slope.gfp.int))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  stat_cor()+
+  ylab("-dGFP/dt/GFP")+
+  xlab("dapi")
+```
+```{r}
+df.for.lm.2 %>%
+  bind_rows() %>% 
+  filter(delta.time == 0) %>% 
+  select(cell.id , gfpMeanBgAFsub) %>% 
+  left_join(.,df.estimates.dmso %>% 
+              filter(term == "delta.time"), by = "cell.id") %>% 
+  left_join(.,cell.info.dmso %>% rename("cell.id" = "unique.trackID"), by = "cell.id") %>% 
+  mutate(slope.gfp.int = estimate/gfpMeanBgAFsub) %>% 
+  filter(estimate < 0, dapi.mean.bg.sub < 400) %>% 
+  ggplot(.,aes(x = dapi.mean.bg.sub, y = area))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  stat_cor()
+```
+
+
+```{r}
+df.for.lm.2 %>%
+  bind_rows() %>% 
+  filter(delta.time == 0) %>% 
+  select(cell.id , gfpMeanBgAFsub) %>% 
+  left_join(.,df.estimates.dmso %>% 
+              filter(term == "delta.time"), by = "cell.id") %>% 
+  left_join(.,cell.info.dmso %>% rename("cell.id" = "unique.trackID"), by = "cell.id") %>% 
+  mutate(slope.gfp.int = estimate/gfpMeanBgAFsub) %>% 
+  filter(estimate < 0) %>% 
+  ggplot(.,aes(x = rfp.mean.bg.sub.puncta, y = -slope.gfp.int))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  ylab("-dGFP/dt/GFP")+
+  xlab("pup1-RFP")+
+  stat_cor()
+```
+```{r}
+df.for.lm.2 %>%
+  bind_rows() %>% 
+  filter(delta.time == 0) %>% 
+  select(cell.id , gfpMeanBgAFsub) %>% 
+  left_join(.,df.estimates.dmso %>% 
+              filter(term == "delta.time"), by = "cell.id") %>% 
+  left_join(.,cell.info.dmso %>% rename("cell.id" = "unique.trackID"), by = "cell.id") %>% 
+  mutate(slope.gfp.int = estimate/gfpMeanBgAFsub) %>% 
+  filter(estimate < 0) %>% 
+  ggplot(.,aes(x = rfp.mean.bg.sub.puncta, y = gfpMeanBgAFsub))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  stat_cor()
+```
+ 
+ 
