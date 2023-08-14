@@ -45,11 +45,11 @@ FilesToRead <- c("C0_Area",
 ```{r}
 ####MG132
 #Getting the list of all the samples in the experiment 
-gfp_imaris <- dir("~/Imaris-data/2022/pup1_rfp/7-20-22-pup1/cln2/imaris/gfp", full.names = TRUE)
+gfp_imaris <- dir("/Imaris-data/2022/pup1_rfp/7-20-22-pup1/cln2/imaris/gfp", full.names = TRUE)
 
 #getting the information for imageJ image info files
 #getting all the image info txt for all the images in the experiment. 
-list.image.info <- list.files("~/Imaris-data/2022/pup1_rfp/7-20-22-pup1/cln2/image_info_imageJ" , full.names = TRUE)
+list.image.info <- list.files("/Imaris-data/2022/pup1_rfp/7-20-22-pup1/cln2/image_info_imageJ" , full.names = TRUE)
 
 #Extracting information from the imageJ csv into a df with actual time differences between each images 
 real.time.interval.df <- get.image.info.OnlyGFP(list.image.info = list.image.info)      
@@ -82,16 +82,6 @@ list.of.files.gfp[["20min"]] <- list.of.files.gfp[["20min"]] %>%
 #files to read
 
 #reading the cell surface imaris files 
-```{r}
-# dapi_pup1_imaris_cells <- dir("~/Imaris-data/2022/proteasome_inhibition/2-23-22-PI/1uM/imaris/surface/cells", full.names = TRUE) 
-# 
-# list.of.files.dapi.pup1 <- get.imaris.info.dapi_pup1(dir.names = dapi_pup1_imaris_cells, 
-#                                                      files_to_read = FilesToReadDAPIRFP)
-# 
-# unique(list.of.files.dapi.pup1$timepoint)
-```
-
-
 #getting the pup1-rfp puncta info
 ##use the pup1_surface info from Imaris
 ```{r}
@@ -121,7 +111,7 @@ FilesToReadDAPIRFP <- c("C0_Area",
 #first get the info of the cell surface then match each cell surface with the pup1 puncta. 
 do not include the MRG cells as they have no pup1-rfp puncta mask
 ```{r}
-dapi_pup1_imaris_cells <- dir("~/Imaris-data/2022/pup1_rfp/7-20-22-pup1/cln2/imaris/surface/cells", full.names = TRUE) 
+dapi_pup1_imaris_cells <- dir("/Imaris-data/2022/pup1_rfp/7-20-22-pup1/cln2/imaris/surface/cells", full.names = TRUE) 
 
 list.of.files.dapi.pup1 <- get.imaris.info.dapi_pup1.surface(dir.names = dapi_pup1_imaris_cells, files_to_read = FilesToReadDAPIRFP) #updated this function to not include trackIDs
 
@@ -133,7 +123,7 @@ list.of.files.dapi.pup1 %>% split(.$timepoint)
 
 #Getting the pup1 puncta surface info 
 ```{r}
-pup1_surface_imaris <- dir("~/Imaris-data/2022/pup1_rfp/7-20-22-pup1/cln2/imaris/surface/pup1", full.names = TRUE) 
+pup1_surface_imaris <- dir("/Imaris-data/2022/pup1_rfp/7-20-22-pup1/cln2/imaris/surface/pup1", full.names = TRUE) 
 
 pup1_puncta <- get.imaris.info.dapi_pup1.surface(dir.names = pup1_surface_imaris[3:8], 
                                                  files_to_read = FilesToReadDAPIRFP) 
@@ -206,26 +196,6 @@ pup1.dapi.cell.puncta <- list.of.files.dapi.pup1 %>% #df with entire cell segmen
 
 
 #combine the cell surface + pup1 puncta info of the pup1 expressing cells with all the cell surface information. There will be NAs in the columns with puncta in their names for the neg cells 
-```{r}
-# pup1.dapi.all <- list.of.files.dapi.pup1 %>% 
-#   left_join(.,pup1.dapi.cell.puncta %>% 
-#               select(.,area, 
-#                      pos.x, 
-#                      pos.y,
-#                      timepoint,
-#                      experiment, 
-#                      field, 
-#                      rfp.center.puncta, rfp.mean.puncta, rfp.median.puncta, rfp.sum.puncta,
-#                      dapi.mean.puncta,dapi.sum.puncta, dapi.median.puncta,
-#                      area.puncta, no.of.voxels.puncta), 
-#             by = c("area","pos.x","pos.y","timepoint", "experiment", "field"))
-# 
-# pup1.dapi.all
-
-#dont need to do this. 
-```
-
-
 Combining the GFP intensities with the rfp puncta info at t = 1 
 ```{r}
 cell_atributes <- list.of.files.gfp$`20min` %>% 
@@ -250,7 +220,7 @@ cell_atributes %>%
 #Background subtraction 
 ```{r}
 #background info files for gfp and mcherry and DAPI: the background folder has two directories: gfp bg and mcherry+dapi bg
-bg <- dir(path = "~/Imaris-data/2022/pup1_rfp/7-20-22-pup1/cln2/background" , full.names = TRUE)
+bg <- dir(path = "/Imaris-data/2022/pup1_rfp/7-20-22-pup1/cln2/background" , full.names = TRUE)
 
 #Get the information for the background intensity for every image for 
 #rfp and DAPI
@@ -267,7 +237,7 @@ gfp.bg.mean$`20min` %>% arrange(field,timepoint)
 
 #gfp background for s4, s5 and s6 samples:
 ```{r}
-s1.3.4.5.6.7.8.gfp.bg_files <- list.files("~/Imaris-data/2022/pup1_rfp/7-20-22-pup1/cln2/background/bg_gfp_s1_s8", full.names = T)
+s1.3.4.5.6.7.8.gfp.bg_files <- list.files("/Imaris-data/2022/pup1_rfp/7-20-22-pup1/cln2/background/bg_gfp_s1_s8", full.names = T)
 
 gfp.bg.mean.s1.3.4.5.6.7.8 <- lapply(s1.3.4.5.6.7.8.gfp.bg_files, function(a){
   read.csv(a) %>% 
@@ -291,7 +261,7 @@ gfp.bg.mean$`20min` %>%
 ```
 
 ```{r}
-s1.3.4.5.6.7.8.rfp.dapi <- list.files("~/Imaris-data/2022/pup1_rfp/7-20-22-pup1/cln2/background/bg_mcherry_dapi_s1_s8", full.names = T)
+s1.3.4.5.6.7.8.rfp.dapi <- list.files("/Imaris-data/2022/pup1_rfp/7-20-22-pup1/cln2/background/bg_mcherry_dapi_s1_s8", full.names = T)
 
 rfp.bg.mean.s5.s7.s8 <- lapply(s1.3.4.5.6.7.8.rfp.dapi, function(a){
   read.csv(a) %>%
@@ -398,19 +368,6 @@ gfp_rfp_dapi_bgsubAbvZero_tp1  %>%
   facet_wrap(~field, scales = "free_x")+
   scale_x_log10()+
   theme_pubr(x.text.angle = 45)
-
-
-#correlation of the dapi staining at timepint 1 and the last timepoint
-# gfp_rfp_dapi_bgsubAbvZero_tp1  %>%
-#   select(dapi.mean.bg.sub, timepoint, field, unique.trackID) %>%
-#   filter(!(unique.trackID == "1000000259_20min_s8")) %>% 
-#   pivot_wider(values_from = dapi.mean.bg.sub, names_from = timepoint) %>% 
-#   ggplot(.,aes(x = `1`, y = `31`))+
-#   geom_point()+
-#   facet_wrap(~field, scales = "free_x")+
-#   theme_pubr(x.text.angle = 45)
-
-#the above code did not work because there are duplicate values for a given cell ID. 
 
 #to find the duplicates
 gfp_rfp_dapi_bgsubAbvZero_tp1  %>% 
@@ -523,7 +480,7 @@ bind_rows(new.gfpLiveCells)%>%
   ggplot(.,aes(timepoint, gfp.mean.bg.sub, group = unique.trackID ,color = sample))+
   geom_line(alpha = 0.2)+
   facet_wrap(~field, scales = "free_y")
-# ggsave(filename="ln-mrg_vs_gfp.png", plot= last_plot() , path = "~/plots/7-2-20/plots_thesis_com_meet-2020/" , width = 13 , height = 8, bg = "transparent")
+
 
 new.gfpLiveCells %>% 
   ggplot(.,aes(real.time.gfp, gfp.mean.bg.sub, group = unique.trackID ,color = sample))+
@@ -534,7 +491,6 @@ new.gfpLiveCells %>%
 Fix background for s1 and s8: fixed background intensities of s1, s3, 4 till s8. 
 
 #Filtering cells based on autofluorescence 
-
 ##getting the autofluorescence threshold for gfp and mcherry 
 ```{r}
 bind_rows(new.gfpLiveCells) %>% 
@@ -561,8 +517,7 @@ liveCellsRFP.DAPI.GFP %>%
 
 ```
 
-
-
+#Autofluorescense thershold
 ```{r}
 #Getting the gfp threshold for filtering cells below this threshold set up based on all the 31 time points for the mrg cells 
 gfp.min.int <- gfp.thershold.31tp(
@@ -609,15 +564,8 @@ unique(filtered.df.new.wo.af.31tp$`20min`$timepoint)
   
 ```
 
-remove the first two blurry images from s7
-```{r}
-# filtered.df.new.wo.af.31tp$`20min` <- filtered.df.new.wo.af.31tp$`20min` %>% filter(field == "s7")
-#   filter(!(field == "s7" & timepoint %in% c(1,2))) 
 
-```
-
-
-#making df for bulk regression
+#making df for 
 ```{r}
 ###This function creats the df for fitting the 24 models 
 # list.df.model <- df.model(filtered.df.new = filtered.df.new.wo.af)
@@ -629,8 +577,7 @@ final.data.31tp.gfp <- clean.df.modeling.gfp(data.gfp = df.model.31tp.gfp)
 
 ```
 
-
-On 1/28/21 talked to premal about filtering: 
+#Removing blurry cells
 1. Remove cells which have positive delta Intensity more than 2 times 
 ```{r}
 #getting IDs of cells which have positive intensity values for less than 2 timepoints 
@@ -663,7 +610,7 @@ df_for_MechanisticModel <- temp.posIntBlw2.gfp  %>%
 ```
 
 
-
+#Saving the CSV with cellular attributtes like area, DNA stain etc 
 ```{r}
 cell_atributes_final <- df_for_MechanisticModel %>% 
   filter(timepoint == 1)  %>% 
@@ -687,7 +634,7 @@ write_csv(cell_atributes_final,file = "/home/Das/plots/pup1-rfp-gfp-decay/7-20-2
 
 ```
 
-#saving the data 
+#saving the CSV with the timeseries data
 ```{r}
 gfp_cln2Pest_filtered <- df_for_MechanisticModel  %>%
   rename("cell.id" = "unique.trackID",
@@ -716,11 +663,5 @@ write_csv(gfp_cln2Pest_filtered , file = "~/plots/pup1-rfp-gfp-decay/7-20-22-cln
 write_csv(df_for_MechanisticModel , file = "~/plots/pup1-rfp-gfp-decay/7-20-22-cln2-gfp/data/gfp_cln2Pest_pup1_raw_data.csv")
 ```
 
-```{r}
-gfp_cln2Pest_filtered %>% 
-  ggplot(.,aes(delta.time, gfpMeanBgAFsub, group = cell.id))+
-  geom_line(alpha = 0.2)+
-  facet_wrap(~exp.field, scales = "free_y")
 
-```
 
