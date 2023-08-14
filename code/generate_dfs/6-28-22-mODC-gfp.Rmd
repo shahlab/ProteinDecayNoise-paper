@@ -42,11 +42,11 @@ FilesToRead <- c("C0_Area",
 ```{r}
 ####MG132
 #Getting the list of all the samples in the experiment 
-gfp_imaris <- dir("/Imaris-data/2022/pup1_rfp/6-28-22/modc-pup1/imaris/gfp", full.names = TRUE)
+gfp_imaris <- dir("Imaris-data/2022/pup1_rfp/6-28-22/modc-pup1/imaris/gfp", full.names = TRUE)
 
 #getting the information for imageJ image info files
 #getting all the image info txt for all the images in the experiment. 
-list.image.info <- list.files("/Imaris-data/2022/pup1_rfp/6-28-22/modc-pup1/image_info_imageJ" , full.names = TRUE)
+list.image.info <- list.files("Imaris-data/2022/pup1_rfp/6-28-22/modc-pup1/image_info_imageJ" , full.names = TRUE)
 
 #Extracting information from the imageJ csv into a df with actual time differences between each images 
 real.time.interval.df <- get.image.info.OnlyGFP(list.image.info = list.image.info)      
@@ -104,7 +104,7 @@ FilesToReadDAPIRFP <- c("C0_Area",
 #first get the info of the cell surface then match each cell surface with the pup1 puncta. 
 do not include the MRG cells as they have no pup1-rfp puncta mask
 ```{r}
-dapi_pup1_imaris_cells <- dir("~/Imaris-data/2022/pup1_rfp/6-28-22/modc-pup1/imaris/surface/cells", full.names = TRUE) 
+dapi_pup1_imaris_cells <- dir("Imaris-data/2022/pup1_rfp/6-28-22/modc-pup1/imaris/surface/cells", full.names = TRUE) 
 
 list.of.files.dapi.pup1 <- get.imaris.info.dapi_pup1.surface(dir.names = dapi_pup1_imaris_cells, files_to_read = FilesToReadDAPIRFP) #updated this function to not include trackIDs
 
@@ -114,7 +114,7 @@ list.of.files.dapi.pup1
 
 #Getting the pup1 puncta surface info 
 ```{r}
-pup1_surface_imaris <- dir("~/Imaris-data/2022/pup1_rfp/6-28-22/modc-pup1/imaris/surface/pup1", full.names = TRUE) 
+pup1_surface_imaris <- dir("Imaris-data/2022/pup1_rfp/6-28-22/modc-pup1/imaris/surface/pup1", full.names = TRUE) 
 
 pup1_puncta <- get.imaris.info.dapi_pup1.surface(dir.names = pup1_surface_imaris, 
                                                  files_to_read = FilesToReadDAPIRFP) 
@@ -208,7 +208,7 @@ cell_atributes %>%
 #Background subtraction 
 ```{r}
 #background info files for gfp and mcherry and DAPI: the background folder has two directories: gfp bg and mcherry+dapi bg
-bg <- dir(path = "/Imaris-data/2022/pup1_rfp/6-28-22/modc-pup1/background" , full.names = TRUE)
+bg <- dir(path = "Imaris-data/2022/pup1_rfp/6-28-22/modc-pup1/background" , full.names = TRUE)
 
 #Get the information for the background intensity for every image for 
 #rfp and DAPI
@@ -224,7 +224,7 @@ s3, s4, s5, s6, s7, s8
 
 #gfp background for s4, s5 and s6 samples:
 ```{r}
-s3.4.5.6.7.8.gfp.bg_files <- list.files("/Imaris-data/2022/pup1_rfp/6-28-22/modc-pup1/background/bg_gfp_s3", full.names = T)
+s3.4.5.6.7.8.gfp.bg_files <- list.files("Imaris-data/2022/pup1_rfp/6-28-22/modc-pup1/background/bg_gfp_s3", full.names = T)
 
 gfp.bg.mean.s3.4.5.6.7.8 <- lapply(s3.4.5.6.7.8.gfp.bg_files, function(a){
   read.csv(a) %>% 
@@ -248,7 +248,7 @@ gfp.bg.mean$`20min` %>%
 ```
 
 ```{r}
-s3.4.5.6.7.8.rfp.dapi <- list.files("/Imaris-data/2022/pup1_rfp/6-28-22/modc-pup1/background/bg_dapi_mcherry_s3", full.names = T)
+s3.4.5.6.7.8.rfp.dapi <- list.files("Imaris-data/2022/pup1_rfp/6-28-22/modc-pup1/background/bg_dapi_mcherry_s3", full.names = T)
 
 rfp.bg.mean.s5.s7.s8 <- lapply(s3.4.5.6.7.8.rfp.dapi, function(a){
   read.csv(a) %>%
@@ -422,18 +422,11 @@ new.gfpLiveCells <-  bind_rows(list.of.files.bg.sub.above.0.gfp) %>%
   filter(unique.trackID %in% liveCellsRFP.DAPI.GFP$unique.trackID)
 ```
 
-```{r}
-bind_rows(deadcell_temp_df) %>% 
-  filter(timepoint %in% c(1,31)) %>% 
-  left_join(.,deadCell_boundry, by = "exp.field") %>% 
-  filter(dapi.mean.bg.sub < dapi.threshold) %>% 
-  filter(timepoint == 31, field == "s7")
-```
 
 #saving the dataframe with the background subtracted, dead cells filtered intensities of gfps from the autofluor cells (MRG) and the gfp positive cells. 
 ```{r}
 new.gfpLiveCells %>% 
-  write_csv(.,path = "~/plots/pup1-rfp-gfp-decay/6-28-22-modc-gfp/data/raw_gfp_int_all.csv")
+  write_csv(.,path = "pup1-rfp-gfp-decay/6-28-22-modc-gfp/data/raw_gfp_int_all.csv")
 ```
 
 
@@ -606,6 +599,11 @@ df_for_MechanisticModel <- temp.posIntBlw2.gfp  %>%
 
 ```
 
+```{bash}
+mkdir -p pup1-rfp-gfp-decay/6-28-22-modc-gfp/data/
+```
+
+
 #saving CSVs with the cellular attribuets at t=0
 ```{r}
 cell_atributes_final <- df_for_MechanisticModel %>% 
@@ -625,7 +623,7 @@ cell_atributes_final <- df_for_MechanisticModel %>%
 
 cell_atributes_final %>% group_by(exp.field) %>% tally()
 
-write_csv(cell_atributes_final,file = "/home/Das/plots/pup1-rfp-gfp-decay/6-28-22-modc-gfp/data/6-28-22_mODC_pup1_attributes.csv")
+write_csv(cell_atributes_final,file = "pup1-rfp-gfp-decay/6-28-22-modc-gfp/data/6-28-22_mODC_pup1_attributes.csv")
   
 
 ```
@@ -650,13 +648,13 @@ gfp_mODCPest_filtered <- df_for_MechanisticModel  %>%
          exp.field
          )
 
-write_csv(gfp_mODCPest_filtered , file = "~/plots/pup1-rfp-gfp-decay/6-28-22-modc-gfp/data/gfp_mODCPest_pup1_filtered.csv")
+write_csv(gfp_mODCPest_filtered , file = "pup1-rfp-gfp-decay/6-28-22-modc-gfp/data/gfp_mODCPest_pup1_filtered.csv")
 ```
 
 #SAVING THE DATAFRAME WHICH HAS ALL THE BACKGROUND INT, AUTOFLUOR INTENSITY (AT THE INTERSECTION, THE 80TH AND THE 95TH QUANTILE OF MRG AUTO GFP INTENSITY)
 
 ```{r}
-write_csv(df_for_MechanisticModel , file = "~/plots/pup1-rfp-gfp-decay/6-28-22-modc-gfp/data/gfp_mODCPest_pup1_raw_data.csv")
+write_csv(df_for_MechanisticModel , file = "pup1-rfp-gfp-decay/6-28-22-modc-gfp/data/gfp_mODCPest_pup1_raw_data.csv")
 ```
 
 getting the area of the puncta information
@@ -769,9 +767,9 @@ pup1.dapi.cell.puncta
 
 
 ```{r}
-read_csv("~/plots/pup1-rfp-gfp-decay/6-28-22-modc-gfp/data/6-28-22_mODC_pup1_attributes.csv") %>% 
+read_csv("pup1-rfp-gfp-decay/6-28-22-modc-gfp/data/6-28-22_mODC_pup1_attributes.csv") %>% 
   left_join(.,pup1.dapi.cell.puncta %>% 
               select(area,pos.x,pos.y, timepoint, experiment, field, area.puncta, no.of.voxels.puncta), 
             by = c("area", "pos.x","pos.y","timepoint","experiment","field")) %>%
-  write_csv(.,path = "~/plots/pup1-rfp-gfp-decay/6-28-22-modc-gfp/data/6-28-22_mODC_pup1_attributes.csv")
+  write_csv(.,path = "pup1-rfp-gfp-decay/6-28-22-modc-gfp/data/6-28-22_mODC_pup1_attributes.csv")
 ```

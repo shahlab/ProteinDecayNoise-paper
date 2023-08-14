@@ -27,7 +27,11 @@ library(ggpubr)
 ```
 
 ```{r}
-source("~/R-scripts/R_functions/master-2-3-22.R")
+source("../../../r_functions/master-2-3-22.R")
+```
+
+```{bash}
+mkdir -p ../../proteasome_inhibition/data/4-1-22/1uM
 ```
 
 #getting the information for imaris files
@@ -50,11 +54,11 @@ FilesToRead <- c("C0_Area",
 ```{r}
 ####MG132
 #Getting the list of all the samples in the experiment 
-gfp_imaris <- dir("~/Imaris-data/2022/proteasome_inhibition/4-1-22-PI/1uM/imaris/gfp", full.names = TRUE)
+gfp_imaris <- dir("../../imaris-data-PI/2022/proteasome_inhibition/4-1-22-PI/1uM/imaris/gfp", full.names = TRUE)
 
 #getting the information for imageJ image info files
 #getting all the image info txt for all the images in the experiment. 
-list.image.info <- list.files("~/Imaris-data/2022/proteasome_inhibition/4-1-22-PI/1uM/image_info_imageJ" , full.names = TRUE)
+list.image.info <- list.files("../../imaris-data-PI/2022/proteasome_inhibition/4-1-22-PI/1uM/image_info_imageJ" , full.names = TRUE)
 
 #Extracting information from the imageJ csv into a df with actual time differences between each images 
 real.time.interval.df <- get.image.info.OnlyGFP(list.image.info = list.image.info)      
@@ -114,7 +118,7 @@ FilesToReadDAPIRFP <- c("C0_Area",
 #first get the info of the cell surface then match each cell surface with the pup1 puncta. 
 do not include the MRG cells as they have no pup1-rfp puncta mask
 ```{r}
-dapi_pup1_imaris_cells <- dir("~/Imaris-data/2022/proteasome_inhibition/4-1-22-PI/1uM/imaris/surface/cells", full.names = TRUE) 
+dapi_pup1_imaris_cells <- dir("../../imaris-data-PI/2022/proteasome_inhibition/4-1-22-PI/1uM/imaris/surface/cells", full.names = TRUE) 
 
 list.of.files.dapi.pup1 <- get.imaris.info.dapi_pup1.surface(dir.names = dapi_pup1_imaris_cells, files_to_read = FilesToReadDAPIRFP) #updated this function to not include trackIDs
 
@@ -124,7 +128,7 @@ list.of.files.dapi.pup1
 
 #Getting the pup1 puncta surface info 
 ```{r}
-pup1_surface_imaris <- dir("~/Imaris-data/2022/proteasome_inhibition/4-1-22-PI/1uM/imaris/surface/pup1", full.names = TRUE) 
+pup1_surface_imaris <- dir("../../imaris-data-PI/2022/proteasome_inhibition/4-1-22-PI/1uM/imaris/surface/pup1", full.names = TRUE) 
 
 pup1_puncta <- get.imaris.info.dapi_pup1.surface(dir.names = pup1_surface_imaris[3:8], 
                                                  files_to_read = FilesToReadDAPIRFP) 
@@ -219,7 +223,7 @@ cell_atributes %>%
 #Background subtraction 
 ```{r}
 #background info files for gfp and mcherry and DAPI: the background folder has two directories: gfp bg and mcherry+dapi bg
-bg <- dir(path = "~/Imaris-data/2022/proteasome_inhibition/4-1-22-PI/1uM/background" , full.names = TRUE)
+bg <- dir(path = "../../imaris-data-PI/2022/proteasome_inhibition/4-1-22-PI/1uM/background" , full.names = TRUE)
 
 #Get the information for the background intensity for every image for 
 #rfp and DAPI
@@ -237,7 +241,7 @@ s4: blurry images t23-t31
 
 rfp and dapi bg for s4, s5, and s6
 ```{r}
-s4_s5_s6_bg_rfp.dapi <- list.files("~/Imaris-data/2022/proteasome_inhibition/4-1-22-PI/1uM/background/bg_mcherry_dapi_s4_s5_s6", full.names = T)
+s4_s5_s6_bg_rfp.dapi <- list.files("../../imaris-data-PI/2022/proteasome_inhibition/4-1-22-PI/1uM/background/bg_mcherry_dapi_s4_s5_s6", full.names = T)
 
 rfp.bg.mean.s4.s5.s6 <- lapply(s4_s5_s6_bg_rfp.dapi, function(a){
   read.csv(a) %>% 
@@ -268,7 +272,7 @@ rfp.dapi.bg.means$`20min` <- rfp.dapi.bg.means$`20min` %>%
 
 #gfp background for s4, s5 and s6 samples:
 ```{r}
-s4_s5_s6_bg_files <- list.files("~/Imaris-data/2022/proteasome_inhibition/4-1-22-PI/1uM/background/bg_gfp_s4_s5_s6", full.names = T)
+s4_s5_s6_bg_files <- list.files("../../imaris-data-PI/2022/proteasome_inhibition/4-1-22-PI/1uM/background/bg_gfp_s4_s5_s6", full.names = T)
 
 gfp.bg.mean.s4.s5.s6 <- lapply(s4_s5_s6_bg_files, function(a){
   read.csv(a) %>% 
@@ -376,19 +380,6 @@ gfp_rfp_dapi_bgsubAbvZero_tp1  %>%
   scale_x_log10()+
   theme_pubr(x.text.angle = 45)
 
-
-#correlation of the dapi staining at timepint 1 and the last timepoint
-# gfp_rfp_dapi_bgsubAbvZero_tp1  %>%
-#   select(dapi.mean.bg.sub, timepoint, field, unique.trackID) %>%
-#   filter(!(unique.trackID == "1000000259_20min_s8")) %>% 
-#   pivot_wider(values_from = dapi.mean.bg.sub, names_from = timepoint) %>% 
-#   ggplot(.,aes(x = `1`, y = `31`))+
-#   geom_point()+
-#   facet_wrap(~field, scales = "free_x")+
-#   theme_pubr(x.text.angle = 45)
-
-#the above code did not work because there are duplicate values for a given cell ID. 
-
 #to find the duplicates
 gfp_rfp_dapi_bgsubAbvZero_tp1  %>% 
   select(dapi.mean.bg.sub, timepoint, field, unique.trackID) %>%
@@ -458,18 +449,11 @@ new.gfpLiveCells <-  bind_rows(list.of.files.bg.sub.above.0.gfp) %>%
   filter(unique.trackID %in% liveCellsRFP.DAPI.GFP$unique.trackID)
 ```
 
-```{r}
-bind_rows(deadcell_temp_df) %>% 
-  filter(timepoint %in% c(1,31)) %>% 
-  left_join(.,deadCell_boundry, by = "exp.field") %>% 
-  filter(dapi.mean.bg.sub < dapi.threshold) %>% 
-  filter(timepoint == 31, field == "s7")
-```
 
 #saving the dataframe with the background subtracted, dead cells filtered intensities of gfps from the autofluor cells (MRG) and the gfp positive cells. 
 ```{r}
 new.gfpLiveCells %>% 
-  write_csv(.,path = "~/plots/proteasome_inhibition/data/4-1-22/1uM/raw_gfp_int_all.csv")
+  write_csv(.,path = "proteasome_inhibition/data/4-1-22/1uM/raw_gfp_int_all.csv")
 ```
 
 
@@ -672,7 +656,7 @@ cell_atributes_final <- df_for_MechanisticModel %>%
 
 cell_atributes_final %>% group_by(exp.field) %>% tally()
 
-write_csv(cell_atributes_final,file = "/home/Das/plots/proteasome_inhibition/data/4-1-22/1uM/4-1-22-GFP_mODC_1uMMG132_attributes.csv")
+write_csv(cell_atributes_final,file = "../../proteasome_inhibition/data/4-1-22/1uM/4-1-22-GFP_mODC_1uMMG132_attributes.csv")
   
 
 ```
@@ -699,13 +683,13 @@ gfp_mODCPest_filtered <- df_for_MechanisticModel  %>%
          exp.field
          )
 
-write_csv(gfp_mODCPest_filtered , file = "~/plots/proteasome_inhibition/data/4-1-22/1uM/gfp_mODCPest_1uMMG132_filtered.csv")
+write_csv(gfp_mODCPest_filtered , file = "../../proteasome_inhibition/data/4-1-22/1uM/gfp_mODCPest_1uMMG132_filtered.csv")
 ```
 
 #SAVING THE DATAFRAME WHICH HAS ALL THE BACKGROUND INT, AUTOFLUOR INTENSITY (AT THE INTERSECTION, THE 80TH AND THE 95TH QUANTILE OF MRG AUTO GFP INTENSITY)
 
 ```{r}
-write_csv(df_for_MechanisticModel , file = "~/plots/proteasome_inhibition/data/4-1-22/1uM/gfp_mODCPest_1uMMG132_raw_data.csv")
+write_csv(df_for_MechanisticModel , file = "../../proteasome_inhibition/data/4-1-22/1uM/gfp_mODCPest_1uMMG132_raw_data.csv")
 ```
 
 ```{r}
