@@ -1,4 +1,4 @@
-# Evaluating noise in protein degradation
+# Evaluating single-cell variability in proteasomal decay.
 This repo is related to the data that went into the paper titled "Evaluating noise in protein decay."<br>
 Folder descriptions: 
 ## data
