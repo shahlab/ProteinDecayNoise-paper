@@ -1,4 +1,4 @@
-# Evaluating noise in protein degradation
+# Evaluating single-cell variability in proteasomal decay.
 This repo is related to the data that went into the paper titled "Evaluating noise in protein decay."<br>
 Folder descriptions: 
 ## data
@@ -67,3 +67,5 @@ File Description:
 
 ## fig_pdfs
 The "**fig_pdfs**" folder contains the figures in pdf format. 
+
+**note on DryAdd dataset** : Download the zipped file *single_cell_GFP_analysis.tar.gz* and *single_cell_GFP_analyssis-PI.tar.gz* and save the unzipped folders to the **code/generate_df** directory. 
